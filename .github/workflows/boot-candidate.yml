@@ -29,21 +29,28 @@ jobs:
             qemu-system-x86 shellcheck make
 
       - name: Validate source tree
-        run: make check
+        shell: bash
+        run: |
+          mkdir -p diagnostics
+          set +e
+          make check 2>&1 | tee diagnostics/static-check.log
+          status=${PIPESTATUS[0]}
+          set -e
+          exit "$status"
 
       - name: Build MO OS ISO
         run: |
           sudo make clean
-          sudo make iso
-          sudo chown -R "$USER:$USER" artifacts
+          sudo make iso 2>&1 | tee diagnostics/iso-build.log
+          sudo chown -R "$USER:$USER" artifacts diagnostics
 
       - name: Verify ISO metadata and checksum
-        run: make verify
+        run: make verify 2>&1 | tee diagnostics/iso-verify.log
 
       - name: Boot ISO in QEMU
         env:
           MO_BOOT_TIMEOUT: 300
-        run: make boot-test
+        run: make boot-test 2>&1 | tee diagnostics/qemu-boot.log
 
       - name: Publish boot candidate
         uses: actions/upload-artifact@v4
@@ -55,3 +62,12 @@ jobs:
           if-no-files-found: error
           retention-days: 7
           compression-level: 0
+
+      - name: Publish diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mo-os-boot-diagnostics
+          path: diagnostics/
+          if-no-files-found: warn
+          retention-days: 7
