@@ -1,0 +1,9 @@
+[Unit]
+Description=Install MO OS onto an explicitly authorized QEMU disk
+After=mo-boot-ready.service
+
+[Service]
+Type=oneshot
+ExecCondition=/usr/local/sbin/mo-install-autotest check
+ExecStart=/usr/local/sbin/mo-install-autotest run
+TimeoutStartSec=20min
