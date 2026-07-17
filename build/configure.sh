@@ -17,7 +17,7 @@ lb config noauto \
   --debian-installer none \
   --archive-areas "main contrib non-free-firmware" \
   --apt-recommends false \
-  --bootappend-live "boot=live components hostname=mo-os username=mo locales=es_PE.UTF-8 keyboard-layouts=latam" \
+  --bootappend-live "boot=live components hostname=mo-os username=mo locales=es_PE.UTF-8 keyboard-layouts=latam systemd.unit=mo-boot-test.target" \
   --iso-application "MO OS Alpha 0.1" \
   --iso-publisher "MO OS Project" \
   --iso-volume "MO_OS_ALPHA_01"
