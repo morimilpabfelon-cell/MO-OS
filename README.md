@@ -2,35 +2,38 @@
 
 MO OS es una distribución Linux propia en desarrollo para programación, creación de software y operación local soberana.
 
-## Objetivo
+## Arquitectura
 
-Construir una ISO arrancable e instalable que reemplace Windows cuando haya superado pruebas reales de hardware, recuperación y actualización.
-
-MO OS utiliza dos dominios complementarios:
-
-- **Dominio estable:** base Debian para arranque, hardware, red, seguridad y recuperación.
+- **Dominio estable:** Debian para arranque, kernel, hardware, red, seguridad y recuperación.
 - **Dominio de desarrollo:** Arch Linux dentro de `systemd-nspawn` para compiladores y herramientas recientes.
-- **Capa MO:** comandos, políticas, construcción de imagen y experiencia unificada.
+- **Capa MO:** comandos, políticas, construcción, instalación y experiencia unificada.
 
-Para el usuario es un solo sistema. Internamente los gestores de paquetes permanecen separados para evitar conflictos entre `apt` y `pacman`.
+Para el usuario es un solo sistema. `apt` y `pacman` nunca administran la misma raíz.
 
 ## Estado actual
 
-**Alpha 0.1 — Terminal Foundation**
+**Alpha 0.2 — Virtual Disk Installer**
 
 Esta fase proporciona:
 
-- Configuración reproducible de una ISO live de terminal.
-- Identidad inicial de MO OS.
+- ISO híbrida BIOS/UEFI construida de forma reproducible.
+- Arranque de terminal validado en QEMU.
+- Instalador persistente restringido a un disco QEMU/KVM desechable.
+- Reinicio desde el disco instalado sin depender de la ISO.
+- Bootstrap verificable del dominio Arch.
 - Comando nativo `mo`.
-- Bootstrap verificable de un dominio Arch Linux.
-- Validaciones automáticas del repositorio.
 
-No incluye todavía un instalador de disco habilitado. No debe usarse para borrar Windows ni modificar una laptop principal.
+La ruta destructiva inicial está deliberadamente limitada:
+
+```bash
+mo install --virtual --disk /dev/vda --erase
+```
+
+El instalador rechaza discos físicos, `/dev/sda`, NVMe, entornos no virtualizados, discos menores de 8 GiB, objetivos montados y cualquier ejecución sin confirmación explícita.
+
+**No debe utilizarse todavía para reemplazar Windows ni instalar sobre una laptop real.**
 
 ## Construcción
-
-Requiere una máquina Debian o derivada con privilegios de administrador:
 
 ```bash
 sudo apt-get update
@@ -39,17 +42,23 @@ make check
 sudo make iso
 ```
 
-La imagen resultante aparecerá en `artifacts/`.
+La imagen resultante aparece en `artifacts/mo-os-alpha-0.2-amd64.iso`.
 
-## Prueba segura
+## Pruebas
 
-La primera prueba debe realizarse en QEMU:
+Arranque live:
 
 ```bash
-make run
+make boot-test
 ```
 
-## Comandos previstos dentro de MO OS
+Instalación completa en un disco virtual desechable y segundo arranque sin ISO:
+
+```bash
+make install-test
+```
+
+## Comandos dentro de MO OS
 
 ```text
 mo status
@@ -57,7 +66,7 @@ mo doctor
 mo dev-init
 mo dev
 mo dev-status
-mo install
+mo install --virtual --disk /dev/vda --erase
 ```
 
-`mo install` permanece bloqueado hasta que exista un instalador con pruebas destructivas aisladas, confirmación explícita y recuperación validada.
+La instalación sobre hardware real permanecerá bloqueada hasta validar UEFI, cifrado, rollback, recuperación y una matriz de hardware.
