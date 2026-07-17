@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-iso_path="${1:-artifacts/mo-os-alpha-0.1-amd64.iso}"
+iso_path="${1:-artifacts/mo-os-alpha-0.2-amd64.iso}"
 
 [[ -f "$iso_path" ]] || {
   echo "ISO not found: $iso_path" >&2
