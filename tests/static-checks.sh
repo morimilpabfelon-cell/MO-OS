@@ -14,7 +14,12 @@ for file in "${shell_files[@]}"; do
 done
 
 if command -v shellcheck >/dev/null 2>&1; then
-  shellcheck build/*.sh tests/*.sh config/includes.chroot/usr/local/bin/mo config/includes.chroot/usr/local/sbin/mo-dev-init
+  shellcheck \
+    build/*.sh \
+    tests/*.sh \
+    config/includes.chroot/usr/local/bin/mo \
+    config/includes.chroot/usr/local/sbin/mo-dev-init \
+    config/includes.chroot/usr/local/sbin/mo-boot-ready
 else
   echo 'shellcheck not installed; syntax validation completed only.' >&2
 fi
@@ -34,5 +39,8 @@ fi
 grep -q 'Disk installation is disabled' config/includes.chroot/usr/local/bin/mo
 grep -q 'archlinux-bootstrap' config/includes.chroot/usr/local/sbin/mo-dev-init
 grep -q 'archive_sha256=' config/includes.chroot/usr/local/sbin/mo-dev-init
+grep -q 'MO_OS_BOOT_READY' config/includes.chroot/usr/local/sbin/mo-boot-ready
+grep -q 'systemd.unit=mo-boot-test.target' build/configure.sh
+grep -q 'Wants=mo-boot-ready.service' config/includes.chroot/etc/systemd/system/mo-boot-test.target
 
 echo 'MO OS static checks passed.'
