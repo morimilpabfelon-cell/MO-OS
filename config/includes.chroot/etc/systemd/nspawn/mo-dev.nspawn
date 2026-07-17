@@ -1,0 +1,8 @@
+[Exec]
+PrivateUsers=pick
+
+[Files]
+Bind=/srv/mo-projects:/work:idmap
+
+[Network]
+VirtualEthernet=yes

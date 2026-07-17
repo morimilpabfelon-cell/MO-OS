@@ -1,0 +1,44 @@
+name: MO OS Foundation Validation
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mo-os-foundation-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  static-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install validation tools
+        run: sudo apt-get update && sudo apt-get install -y shellcheck live-build
+      - name: Validate repository
+        run: make check
+      - name: Validate live-build configuration
+        run: make configure
+
+  pinned-arch-source:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Verify pinned Arch bootstrap checksum source
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          script=config/includes.chroot/usr/local/sbin/mo-dev-init
+          release=$(sed -n 's/^readonly release=//p' "$script")
+          archive=$(sed -n 's/^readonly archive="\(.*\)"/\1/p' "$script" | sed "s/\${release}/$release/g")
+          expected=$(sed -n 's/^readonly archive_sha256="\(.*\)"/\1/p' "$script")
+          curl --fail --location --proto '=https' --tlsv1.2 \
+            "https://geo.mirror.pkgbuild.com/iso/${release}/sha256sums.txt" \
+            | grep " ${archive}$" \
+            | grep -q "^${expected} "
