@@ -18,12 +18,28 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Install validation tools
-        run: sudo apt-get update && sudo apt-get install -y shellcheck live-build
+
+      - name: Install static validation tools
+        run: sudo apt-get update && sudo apt-get install -y shellcheck make
+
       - name: Validate repository
         run: make check
-      - name: Validate live-build configuration
-        run: make configure
+
+      - name: Validate live-build configuration in Debian Trixie
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          sudo docker run --rm \
+            --volume "$PWD:/workspace" \
+            --workdir /workspace \
+            debian:trixie-slim \
+            bash -lc '
+              set -Eeuo pipefail
+              export DEBIAN_FRONTEND=noninteractive
+              apt-get update
+              apt-get install -y --no-install-recommends live-build
+              make configure
+            '
 
   pinned-arch-source:
     runs-on: ubuntu-latest
