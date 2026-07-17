@@ -43,11 +43,11 @@ if grep -Eq '(^|/)(apt|pacman)[[:space:]]' config/includes.chroot/usr/local/bin/
 fi
 
 installer=config/includes.chroot/usr/local/sbin/mo-install
-grep -Fq '[[ "$disk" == /dev/vda ]]' "$installer"
-grep -Fq '[[ "$virtual_mode" -eq 1 ]]' "$installer"
-grep -Fq '[[ "$erase_confirmed" -eq 1 ]]' "$installer"
+grep -Fq "[[ \"\$disk\" == /dev/vda ]]" "$installer"
+grep -Fq "[[ \"\$virtual_mode\" -eq 1 ]]" "$installer"
+grep -Fq "[[ \"\$erase_confirmed\" -eq 1 ]]" "$installer"
 grep -Fq 'qemu|kvm' "$installer"
-grep -Fq 'minimum_bytes=$((8 * 1024 * 1024 * 1024))' "$installer"
+grep -Fq "minimum_bytes=\$((8 * 1024 * 1024 * 1024))" "$installer"
 grep -Fq 'MO_OS_INSTALL_COMPLETE' "$installer"
 if grep -Eq "^disk=['\"]/dev/" "$installer"; then
   echo 'Installer must not define a default block device.' >&2
