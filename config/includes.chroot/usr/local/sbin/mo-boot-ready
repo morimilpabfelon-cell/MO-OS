@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+version=unknown
+if [[ -r /etc/mo-release ]]; then
+  # shellcheck disable=SC1091
+  source /etc/mo-release
+  version="${VERSION:-unknown}"
+fi
+
+message="MO_OS_BOOT_READY version=${version} hostname=$(hostname)"
+printf '%s\n' "$message" >/dev/console
+if [[ -c /dev/ttyS0 ]]; then
+  printf '%s\n' "$message" >/dev/ttyS0
+fi
+logger -t mo-boot "$message" || true

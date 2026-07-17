@@ -1,0 +1,8 @@
+[Unit]
+Description=Emit MO OS boot readiness signal
+After=multi-user.target
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash /usr/local/sbin/mo-boot-ready
+RemainAfterExit=yes

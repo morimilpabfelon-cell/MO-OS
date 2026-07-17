@@ -1,0 +1,6 @@
+[Unit]
+Description=MO OS boot validation target
+Requires=multi-user.target
+After=multi-user.target
+Wants=mo-boot-ready.service
+AllowIsolate=yes
