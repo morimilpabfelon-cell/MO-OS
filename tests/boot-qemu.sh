@@ -19,6 +19,8 @@ done
 
 log_file="$(mktemp)"
 qemu_pid=''
+# Invoked indirectly by the EXIT trap.
+# shellcheck disable=SC2317
 cleanup() {
   if [[ -n "$qemu_pid" ]] && kill -0 "$qemu_pid" 2>/dev/null; then
     kill "$qemu_pid" 2>/dev/null || true
