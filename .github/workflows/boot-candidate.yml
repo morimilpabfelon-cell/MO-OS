@@ -1,0 +1,57 @@
+name: MO OS Boot Candidate
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mo-os-boot-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-boot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install ISO and virtualization tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            live-build debootstrap xorriso squashfs-tools \
+            isolinux syslinux-common syslinux-utils \
+            grub-pc-bin grub-efi-amd64-bin mtools dosfstools \
+            qemu-system-x86 shellcheck make
+
+      - name: Validate source tree
+        run: make check
+
+      - name: Build MO OS ISO
+        run: |
+          sudo make clean
+          sudo make iso
+          sudo chown -R "$USER:$USER" artifacts
+
+      - name: Verify ISO metadata and checksum
+        run: make verify
+
+      - name: Boot ISO in QEMU
+        env:
+          MO_BOOT_TIMEOUT: 300
+        run: make boot-test
+
+      - name: Publish boot candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: mo-os-alpha-0.1-amd64
+          path: |
+            artifacts/mo-os-alpha-0.1-amd64.iso
+            artifacts/mo-os-alpha-0.1-amd64.iso.sha256
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
