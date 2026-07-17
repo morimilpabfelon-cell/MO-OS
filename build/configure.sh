@@ -9,6 +9,8 @@ command -v lb >/dev/null 2>&1 || {
   exit 1
 }
 
+find config/hooks -type f -name '*.hook.*' -exec chmod 0755 {} +
+
 lb config noauto \
   --mode debian \
   --distribution trixie \
