@@ -39,18 +39,33 @@ jobs:
           exit "$status"
 
       - name: Build MO OS ISO
+        shell: bash
         run: |
+          set -Eeuo pipefail
           sudo make clean
           sudo make iso 2>&1 | tee diagnostics/iso-build.log
           sudo chown -R "$USER:$USER" artifacts diagnostics
 
       - name: Verify ISO metadata and checksum
-        run: make verify 2>&1 | tee diagnostics/iso-verify.log
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          make verify 2>&1 | tee diagnostics/iso-verify.log
 
       - name: Boot ISO in QEMU
+        shell: bash
         env:
           MO_BOOT_TIMEOUT: 300
-        run: make boot-test 2>&1 | tee diagnostics/qemu-boot.log
+        run: |
+          set -Eeuo pipefail
+          make boot-test 2>&1 | tee diagnostics/qemu-boot.log
+
+      - name: Record artifact metadata
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ls -lh artifacts | tee diagnostics/artifact-info.txt
+          sha256sum artifacts/mo-os-alpha-0.1-amd64.iso | tee -a diagnostics/artifact-info.txt
 
       - name: Publish boot candidate
         uses: actions/upload-artifact@v4
