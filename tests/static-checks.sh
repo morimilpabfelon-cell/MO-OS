@@ -41,6 +41,9 @@ grep -q 'archlinux-bootstrap' config/includes.chroot/usr/local/sbin/mo-dev-init
 grep -q 'archive_sha256=' config/includes.chroot/usr/local/sbin/mo-dev-init
 grep -q 'MO_OS_BOOT_READY' config/includes.chroot/usr/local/sbin/mo-boot-ready
 grep -q 'systemd.unit=mo-boot-test.target' build/configure.sh
+grep -q -- '--security false' build/configure.sh
+grep -q 'trixie-security' config/archives/mo-security.list.chroot
+grep -q 'trixie-security' config/archives/mo-security.list.binary
 grep -q 'Wants=mo-boot-ready.service' config/includes.chroot/etc/systemd/system/mo-boot-test.target
 
 echo 'MO OS static checks passed.'
