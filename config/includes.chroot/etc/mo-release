@@ -1,5 +1,5 @@
 NAME="MO OS"
 ID=mo-os
-VERSION="0.1.0-alpha.1"
-VERSION_CODENAME="terminal-foundation"
+VERSION="0.2.0-alpha.1"
+VERSION_CODENAME="virtual-installer"
 ARCHITECTURE="amd64"
