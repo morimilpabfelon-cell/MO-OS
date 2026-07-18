@@ -8,6 +8,8 @@ loop_device=''
 root_mount="$workdir/root"
 top_mount="$workdir/top"
 
+# Invoked indirectly by the EXIT trap.
+# shellcheck disable=SC2317
 cleanup() {
   set +e
   mountpoint -q "$root_mount/.snapshots" && umount "$root_mount/.snapshots"
