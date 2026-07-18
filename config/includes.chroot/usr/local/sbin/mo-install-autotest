@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-readonly expected_token=MO-INSTALL-VIRTUAL-DISK-V1
+readonly expected_token=MO-INSTALL-VDA-01
 
 read_token() {
   local path value
