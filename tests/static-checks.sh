@@ -30,7 +30,8 @@ if command -v shellcheck >/dev/null 2>&1; then
     config/includes.chroot/usr/local/sbin/mo-recovery-autotest \
     config/includes.chroot/usr/local/sbin/mo-recovery-test-mutate \
     config/includes.chroot/usr/local/sbin/mo-recovery-verify \
-    config/includes.chroot/usr/local/sbin/mo-snapshot
+    config/includes.chroot/usr/local/sbin/mo-snapshot \
+    config/includes.chroot/usr/local/sbin/mo-update
 else
   echo 'shellcheck not installed; syntax validation completed only.' >&2
 fi
@@ -46,6 +47,7 @@ grep -Fxq 'cryptsetup' "$package_file"
 grep -Fxq 'cryptsetup-initramfs' "$package_file"
 grep -Fxq 'grub-efi-amd64-bin' "$package_file"
 grep -Fxq 'dosfstools' "$package_file"
+grep -Fxq 'openssl' "$package_file"
 
 if grep -Eq '(^|/)(apt|pacman)[[:space:]]' config/includes.chroot/usr/local/bin/mo; then
   echo 'The public mo command must not expose direct package-manager mixing.' >&2
@@ -55,12 +57,14 @@ fi
 installer=config/includes.chroot/usr/local/sbin/mo-install
 recovery=config/includes.chroot/usr/local/sbin/mo-recovery
 snapshot=config/includes.chroot/usr/local/sbin/mo-snapshot
+updater=config/includes.chroot/usr/local/sbin/mo-update
 mo_command=config/includes.chroot/usr/local/bin/mo
 install_autotest=config/includes.chroot/usr/local/sbin/mo-install-autotest
 recovery_autotest=config/includes.chroot/usr/local/sbin/mo-recovery-autotest
 mutation_service=config/includes.chroot/etc/systemd/system/mo-recovery-test-mutate.service
 verify_service=config/includes.chroot/etc/systemd/system/mo-recovery-verify.service
 
+# Encrypted installer and recovery boundary.
 grep -Fq '[[ "$disk" == /dev/vda ]]' "$installer"
 grep -Fq '[[ "$virtual_mode" -eq 1 ]]' "$installer"
 grep -Fq '[[ "$firmware" == uefi ]]' "$installer"
@@ -115,6 +119,27 @@ if grep -q 'mo-installed-ready.service' "$mutation_service" "$verify_service"; t
   exit 1
 fi
 
+# Signed update boundary.
+grep -Fq 'default_trust_key=/etc/mo/trust/update-public.pem' "$updater"
+grep -Fq 'openssl dgst -sha256 -verify' "$updater"
+grep -Fq 'manifest signature verification failed' "$updater"
+grep -Fq 'MO_UPDATE_SEQUENCE' "$updater"
+grep -Fq '((sequence > current_sequence))' "$updater"
+grep -Fq 'btrfs subvolume snapshot -r "$root"' "$updater"
+grep -Fq 'allowed_prefix = pathlib.PurePosixPath("usr/local/share/mo-update")' "$updater"
+grep -Fq 'not member.isfile()' "$updater"
+grep -Fq 'MO_UPDATE_ALLOW_TEST_ROOT' "$updater"
+grep -Fq 'MO_OS_UPDATE_APPLIED' "$updater"
+grep -Fq 'openssl genpkey -algorithm RSA' tests/update-signature.sh
+grep -Fq 'Replay protection failed' tests/update-signature.sh
+grep -Fq 'Tampered payload was accepted' tests/update-signature.sh
+grep -Fq '.snapshots/pre-update-1' tests/update-signature.sh
+if grep -R -n --include='*.pem' --include='*.key' -- 'PRIVATE KEY' config docs 2>/dev/null; then
+  echo 'Private signing key material must never be committed.' >&2
+  exit 1
+fi
+
+# Existing build and boot invariants.
 grep -q 'expect' tests/install-qemu.sh
 grep -q 'MO-RECOVERY-VDA-01' tests/install-qemu.sh
 grep -q 'MO_OS_ROLLBACK_VERIFIED' tests/install-qemu.sh
@@ -129,10 +154,13 @@ grep -q 'set timeout=5' build/configure.sh
 
 grep -q 'mo install --virtual --firmware uefi --disk /dev/vda --erase --username NAME' "$mo_command"
 grep -q 'mo recovery rollback --virtual --firmware uefi --disk /dev/vda --snapshot NAME' "$mo_command"
+grep -q 'mo update verify --bundle DIR' "$mo_command"
 grep -q 'snapshot)' "$mo_command"
 grep -q 'recovery)' "$mo_command"
+grep -q 'update)' "$mo_command"
 grep -q 'make install-test' Makefile
-grep -q '0.4.0-alpha.1' VERSION
-grep -q '0.4.0-alpha.1' config/includes.chroot/etc/mo-release
+grep -q 'make update-test' Makefile
+grep -q '0.5.0-alpha.1' VERSION
+grep -q '0.5.0-alpha.1' config/includes.chroot/etc/mo-release
 
-echo 'MO OS encrypted recovery static checks passed.'
+echo 'MO OS encrypted recovery and signed update static checks passed.'
