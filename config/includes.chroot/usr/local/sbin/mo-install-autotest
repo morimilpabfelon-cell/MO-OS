@@ -1,12 +1,37 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-readonly token_path=/sys/block/vda/device/serial
 readonly expected_token=MO-INSTALL-VIRTUAL-DISK-V1
 
 read_token() {
-  [[ -r "$token_path" ]] || return 1
-  tr -d '\000\r\n ' < "$token_path"
+  local path value
+  for path in \
+    /sys/class/block/vda/serial \
+    /sys/block/vda/serial \
+    /sys/block/vda/device/serial; do
+    if [[ -r "$path" ]]; then
+      value="$(tr -d '\000\r\n ' < "$path")"
+      if [[ -n "$value" ]]; then
+        printf '%s\n' "$value"
+        return 0
+      fi
+    fi
+  done
+
+  if command -v udevadm >/dev/null 2>&1 && [[ -b /dev/vda ]]; then
+    value="$(
+      udevadm info --query=property --name=/dev/vda 2>/dev/null \
+        | sed -n -E 's/^ID_SERIAL(_SHORT)?=//p' \
+        | head -n 1
+    )"
+    value="${value//[[:space:]]/}"
+    if [[ -n "$value" ]]; then
+      printf '%s\n' "$value"
+      return 0
+    fi
+  fi
+
+  return 1
 }
 
 emit() {
@@ -17,12 +42,15 @@ emit() {
   fi
 }
 
+observed_token="$(read_token 2>/dev/null || true)"
+
 case "${1:-run}" in
   check)
-    [[ "$(read_token 2>/dev/null || true)" == "$expected_token" ]]
+    [[ "$observed_token" == "$expected_token" ]]
     ;;
   run)
-    [[ "$(read_token 2>/dev/null || true)" == "$expected_token" ]] || exit 0
+    emit "MO_OS_INSTALL_TOKEN disk=/dev/vda value=${observed_token:-missing}"
+    [[ "$observed_token" == "$expected_token" ]] || exit 0
     emit 'MO_OS_INSTALL_AUTHORIZED disk=/dev/vda'
     /usr/local/sbin/mo-install \
       --virtual \
