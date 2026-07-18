@@ -1,0 +1,10 @@
+[Unit]
+Description=Verify that the controlled mutation disappeared after rollback
+Requires=mo-installed-ready.service
+After=mo-installed-ready.service
+ConditionPathExists=/boot/mo-recovery-test-completed
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash /usr/local/sbin/mo-recovery-verify
+TimeoutStartSec=2min
