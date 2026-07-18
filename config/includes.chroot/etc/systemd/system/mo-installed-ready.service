@@ -5,7 +5,7 @@ ConditionPathExists=/etc/mo-installed
 
 [Service]
 Type=oneshot
-ExecStart=/usr/local/sbin/mo-installed-ready
+ExecStart=/bin/bash /usr/local/sbin/mo-installed-ready
 RemainAfterExit=yes
 
 [Install]
