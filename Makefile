@@ -1,7 +1,7 @@
-.PHONY: help check configure iso verify boot-test install-test run clean
+.PHONY: help check configure iso verify boot-test install-test update-test run clean
 
 SHELL := /bin/bash
-ISO := artifacts/mo-os-alpha-0.4-amd64.iso
+ISO := artifacts/mo-os-alpha-0.5-amd64.iso
 
 help:
 	@printf '%s\n' \
@@ -12,6 +12,7 @@ help:
 	  '  make verify       Inspect and hash the ISO' \
 	  '  make boot-test    Verify terminal boot in QEMU' \
 	  '  make install-test Install, unlock, mutate, roll back and reboot a disposable QEMU disk' \
+	  '  sudo make update-test Verify signatures, snapshots, tamper rejection and anti-replay' \
 	  '  make run          Boot the ISO interactively' \
 	  '  sudo make clean   Remove live-build output'
 
@@ -32,6 +33,9 @@ boot-test:
 
 install-test:
 	@bash tests/install-qemu.sh "$(ISO)"
+
+update-test:
+	@bash tests/update-signature.sh
 
 run:
 	@test -f "$(ISO)" || { echo "Missing $(ISO). Build it first." >&2; exit 1; }

@@ -1,4 +1,4 @@
-name: MO OS Encrypted Recovery Candidate
+name: MO OS Trusted Updates Candidate
 
 on:
   push:
@@ -14,9 +14,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build-boot-install-recover:
+  build-boot-install-recover-update:
     runs-on: ubuntu-latest
-    timeout-minutes: 150
+    timeout-minutes: 160
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -25,7 +25,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            expect qemu-system-x86 ovmf shellcheck make
+            btrfs-progs expect openssl qemu-system-x86 ovmf shellcheck make util-linux
 
       - name: Validate source tree
         shell: bash
@@ -36,6 +36,12 @@ jobs:
           status=${PIPESTATUS[0]}
           set -e
           exit "$status"
+
+      - name: Verify signed update trust chain
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          sudo make update-test 2>&1 | tee diagnostics/signed-update-test.log
 
       - name: Build MO OS ISO inside Debian Trixie
         shell: bash
@@ -90,15 +96,15 @@ jobs:
         run: |
           set -Eeuo pipefail
           ls -lh artifacts | tee diagnostics/artifact-info.txt
-          sha256sum artifacts/mo-os-alpha-0.4-amd64.iso | tee -a diagnostics/artifact-info.txt
+          sha256sum artifacts/mo-os-alpha-0.5-amd64.iso | tee -a diagnostics/artifact-info.txt
 
       - name: Publish system candidate
         uses: actions/upload-artifact@v4
         with:
-          name: mo-os-alpha-0.4-amd64
+          name: mo-os-alpha-0.5-amd64
           path: |
-            artifacts/mo-os-alpha-0.4-amd64.iso
-            artifacts/mo-os-alpha-0.4-amd64.iso.sha256
+            artifacts/mo-os-alpha-0.5-amd64.iso
+            artifacts/mo-os-alpha-0.5-amd64.iso.sha256
           if-no-files-found: error
           retention-days: 7
           compression-level: 0
@@ -107,7 +113,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: mo-os-alpha-0.4-diagnostics
+          name: mo-os-alpha-0.5-diagnostics
           path: diagnostics/
           if-no-files-found: warn
           retention-days: 7

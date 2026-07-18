@@ -28,6 +28,7 @@ nano
 network-manager
 nftables
 openssh-client
+openssl
 parted
 python3
 rsync
