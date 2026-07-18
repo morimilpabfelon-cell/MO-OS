@@ -4,5 +4,5 @@ After=mo-boot-ready.service
 
 [Service]
 Type=oneshot
-ExecStart=/usr/local/sbin/mo-install-autotest run
+ExecStart=/bin/bash /usr/local/sbin/mo-install-autotest run
 TimeoutStartSec=20min
