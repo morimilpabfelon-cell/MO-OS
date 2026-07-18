@@ -1,0 +1,10 @@
+[Unit]
+Description=Create one controlled post-snapshot mutation for recovery validation
+Requires=mo-installed-ready.service
+After=mo-installed-ready.service
+ConditionPathExists=/boot/mo-recovery-test-once
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash /usr/local/sbin/mo-recovery-test-mutate
+TimeoutStartSec=2min
