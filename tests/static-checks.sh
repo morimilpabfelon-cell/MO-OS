@@ -58,7 +58,8 @@ grep -q 'archlinux-bootstrap' config/includes.chroot/usr/local/sbin/mo-dev-init
 grep -q 'archive_sha256=' config/includes.chroot/usr/local/sbin/mo-dev-init
 grep -q 'MO_OS_BOOT_READY' config/includes.chroot/usr/local/sbin/mo-boot-ready
 grep -q 'MO_OS_INSTALLED_BOOT_READY' config/includes.chroot/usr/local/sbin/mo-installed-ready
-grep -q 'virtual-disk-v1' config/includes.chroot/usr/local/sbin/mo-install-autotest
+grep -q 'MO-INSTALL-VIRTUAL-DISK-V1' config/includes.chroot/usr/local/sbin/mo-install-autotest
+grep -q '/sys/class/dmi/id/product_serial' config/includes.chroot/usr/local/sbin/mo-install-autotest
 grep -q 'systemd.unit=mo-boot-test.target' build/configure.sh
 grep -q -- '--security false' build/configure.sh
 grep -q 'trixie-security' config/archives/mo-security.list.chroot
