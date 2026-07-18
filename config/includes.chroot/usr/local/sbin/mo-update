@@ -1,0 +1,259 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+readonly default_trust_key=/etc/mo/trust/update-public.pem
+readonly default_root=/
+
+command_name=''
+bundle=''
+trust_key="$default_trust_key"
+root="$default_root"
+
+usage() {
+  cat <<'USAGE'
+MO OS signed update verifier and applier
+
+Usage:
+  mo-update verify --bundle DIR [--trust-key FILE]
+  mo-update apply --bundle DIR [--trust-key FILE] [--root DIR]
+  mo-update status [--root DIR]
+
+The bundle must contain manifest.env, manifest.sig and payload.tar.
+USAGE
+}
+
+fail() {
+  echo "mo-update: $*" >&2
+  exit 1
+}
+
+require_command() {
+  command -v "$1" >/dev/null 2>&1 || fail "missing dependency: $1"
+}
+
+read_manifest_value() {
+  local key=$1 manifest=$2 value
+  value="$(awk -F= -v wanted="$key" '$1 == wanted {sub(/^[^=]*=/, ""); print; found=1} END {if (!found) exit 1}' "$manifest")" \
+    || fail "manifest is missing $key"
+  printf '%s\n' "$value"
+}
+
+validate_bundle() {
+  local manifest="$bundle/manifest.env"
+  local signature="$bundle/manifest.sig"
+  local payload="$bundle/payload.tar"
+  local format version sequence payload_name payload_sha actual_sha
+
+  [[ -d "$bundle" ]] || fail "bundle directory does not exist: $bundle"
+  [[ -f "$manifest" ]] || fail 'bundle is missing manifest.env'
+  [[ -f "$signature" ]] || fail 'bundle is missing manifest.sig'
+  [[ -f "$payload" ]] || fail 'bundle is missing payload.tar'
+  [[ -r "$trust_key" ]] || fail "trusted public key is unavailable: $trust_key"
+
+  require_command awk
+  require_command openssl
+  require_command sha256sum
+  require_command python3
+
+  awk -F= '
+    BEGIN {
+      allowed["MO_UPDATE_FORMAT"]=1
+      allowed["MO_UPDATE_VERSION"]=1
+      allowed["MO_UPDATE_SEQUENCE"]=1
+      allowed["MO_UPDATE_PAYLOAD"]=1
+      allowed["MO_UPDATE_SHA256"]=1
+    }
+    NF != 2 || !($1 in allowed) || seen[$1]++ { exit 1 }
+    END {
+      if (length(seen) != 5) exit 1
+    }
+  ' "$manifest" || fail 'manifest structure is invalid'
+
+  openssl dgst -sha256 -verify "$trust_key" -signature "$signature" "$manifest" >/dev/null \
+    || fail 'manifest signature verification failed'
+
+  format="$(read_manifest_value MO_UPDATE_FORMAT "$manifest")"
+  version="$(read_manifest_value MO_UPDATE_VERSION "$manifest")"
+  sequence="$(read_manifest_value MO_UPDATE_SEQUENCE "$manifest")"
+  payload_name="$(read_manifest_value MO_UPDATE_PAYLOAD "$manifest")"
+  payload_sha="$(read_manifest_value MO_UPDATE_SHA256 "$manifest")"
+
+  [[ "$format" == 1 ]] || fail "unsupported update format: $format"
+  [[ "$version" =~ ^[0-9A-Za-z][0-9A-Za-z._+-]{0,63}$ ]] || fail 'invalid update version'
+  [[ "$sequence" =~ ^[1-9][0-9]{0,18}$ ]] || fail 'invalid update sequence'
+  [[ "$payload_name" == payload.tar ]] || fail 'manifest payload name is not permitted'
+  [[ "$payload_sha" =~ ^[0-9a-f]{64}$ ]] || fail 'invalid payload SHA-256'
+
+  actual_sha="$(sha256sum "$payload" | awk '{print $1}')"
+  [[ "$actual_sha" == "$payload_sha" ]] || fail 'payload SHA-256 mismatch'
+
+  python3 - "$payload" <<'PY_VALIDATE' || fail 'payload archive validation failed'
+import pathlib
+import sys
+import tarfile
+
+archive = pathlib.Path(sys.argv[1])
+allowed_file = pathlib.PurePosixPath("etc/mo-update-version")
+allowed_prefix = pathlib.PurePosixPath("usr/local/share/mo-update")
+count = 0
+total = 0
+
+with tarfile.open(archive, "r:") as tf:
+    for member in tf.getmembers():
+        path = pathlib.PurePosixPath(member.name)
+        if path.is_absolute() or ".." in path.parts:
+            raise SystemExit(f"unsafe path: {member.name}")
+        if member.isdir():
+            continue
+        if not member.isfile():
+            raise SystemExit(f"unsupported archive member: {member.name}")
+        if path != allowed_file and allowed_prefix not in path.parents:
+            raise SystemExit(f"path is not allowlisted: {member.name}")
+        count += 1
+        total += member.size
+        if count > 128 or total > 32 * 1024 * 1024:
+            raise SystemExit("payload exceeds foundation limits")
+PY_VALIDATE
+
+  printf '%s\n' "$version" "$sequence" "$actual_sha"
+}
+
+ensure_test_root_allowed() {
+  if [[ "$root" != / ]]; then
+    [[ "${MO_UPDATE_ALLOW_TEST_ROOT:-0}" == 1 ]] \
+      || fail 'non-root targets are reserved for explicit test mode'
+    [[ "$root" == /tmp/* || "$root" == /mnt/* ]] \
+      || fail 'test root must be below /tmp or /mnt'
+  fi
+}
+
+apply_update() {
+  local metadata version sequence payload_sha state_dir current_sequence snapshot_name transaction_dir
+
+  [[ ${EUID:-$(id -u)} -eq 0 ]] || fail 'root privileges are required to apply updates'
+  ensure_test_root_allowed
+  metadata="$(validate_bundle)"
+  version="$(sed -n '1p' <<<"$metadata")"
+  sequence="$(sed -n '2p' <<<"$metadata")"
+  payload_sha="$(sed -n '3p' <<<"$metadata")"
+
+  [[ -r "$root/etc/mo-installed" ]] || fail 'updates require a persistent MO OS installation'
+  require_command btrfs
+
+  state_dir="$root/var/lib/mo-update"
+  mkdir -p "$state_dir/transactions" "$root/.snapshots"
+  current_sequence=0
+  if [[ -r "$state_dir/sequence" ]]; then
+    current_sequence="$(cat "$state_dir/sequence")"
+    [[ "$current_sequence" =~ ^[0-9]+$ ]] || fail 'stored update sequence is invalid'
+  fi
+  ((sequence > current_sequence)) || fail 'update sequence is not newer than the installed sequence'
+
+  [[ "$(stat -f -c %T "$root")" == btrfs ]] || fail 'signed updates require a Btrfs root'
+  [[ "$(stat -f -c %T "$root/.snapshots")" == btrfs ]] || fail 'snapshot storage must be on Btrfs'
+
+  snapshot_name="pre-update-${sequence}"
+  [[ ! -e "$root/.snapshots/$snapshot_name" ]] || fail "snapshot already exists: $snapshot_name"
+  btrfs subvolume snapshot -r "$root" "$root/.snapshots/$snapshot_name" >/dev/null
+
+  transaction_dir="$state_dir/transactions/$sequence"
+  mkdir -p "$transaction_dir"
+  cp "$bundle/manifest.env" "$bundle/manifest.sig" "$transaction_dir/"
+  printf '%s\n' "$payload_sha" > "$transaction_dir/payload.sha256"
+  printf '%s\n' "$snapshot_name" > "$transaction_dir/snapshot"
+
+  python3 - "$bundle/payload.tar" "$root" <<'PY_EXTRACT'
+import os
+import pathlib
+import shutil
+import sys
+import tarfile
+
+archive = pathlib.Path(sys.argv[1])
+root = pathlib.Path(sys.argv[2]).resolve()
+with tarfile.open(archive, "r:") as tf:
+    for member in tf.getmembers():
+        if not member.isfile():
+            continue
+        destination = root.joinpath(*pathlib.PurePosixPath(member.name).parts)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        source = tf.extractfile(member)
+        if source is None:
+            raise SystemExit(f"could not read payload member: {member.name}")
+        temporary = destination.with_name(destination.name + ".mo-update.tmp")
+        with source, open(temporary, "wb") as output:
+            shutil.copyfileobj(source, output)
+            output.flush()
+            os.fsync(output.fileno())
+        os.chmod(temporary, member.mode & 0o755)
+        os.replace(temporary, destination)
+PY_EXTRACT
+
+  printf '%s\n' "$sequence" > "$state_dir/sequence.tmp"
+  mv "$state_dir/sequence.tmp" "$state_dir/sequence"
+  printf '%s\n' "$version" > "$state_dir/version"
+  sync
+
+  printf 'MO_OS_UPDATE_APPLIED version=%s sequence=%s snapshot=%s\n' \
+    "$version" "$sequence" "$snapshot_name"
+}
+
+show_status() {
+  ensure_test_root_allowed
+  local state_dir="$root/var/lib/mo-update"
+  printf 'TRUST_KEY="%s"\n' "$trust_key"
+  if [[ -r "$state_dir/sequence" ]]; then
+    printf 'SEQUENCE="%s"\n' "$(cat "$state_dir/sequence")"
+    printf 'VERSION="%s"\n' "$(cat "$state_dir/version" 2>/dev/null || echo unknown)"
+  else
+    echo 'SEQUENCE="0"'
+    echo 'VERSION="none"'
+  fi
+}
+
+(($# > 0)) || { usage; exit 2; }
+command_name=$1
+shift
+
+while (($# > 0)); do
+  case "$1" in
+    --bundle)
+      shift
+      (($# > 0)) || fail '--bundle requires a directory'
+      bundle=$1
+      ;;
+    --trust-key)
+      shift
+      (($# > 0)) || fail '--trust-key requires a file'
+      trust_key=$1
+      ;;
+    --root)
+      shift
+      (($# > 0)) || fail '--root requires a directory'
+      root=${1%/}
+      [[ -n "$root" ]] || root=/
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *) fail "unknown option: $1" ;;
+  esac
+  shift
+done
+
+case "$command_name" in
+  verify)
+    [[ -n "$bundle" ]] || fail 'verify requires --bundle'
+    validate_bundle >/dev/null
+    echo 'MO_OS_UPDATE_VERIFIED'
+    ;;
+  apply)
+    [[ -n "$bundle" ]] || fail 'apply requires --bundle'
+    apply_update
+    ;;
+  status)
+    show_status
+    ;;
+  *) fail "unknown command: $command_name" ;;
+esac
