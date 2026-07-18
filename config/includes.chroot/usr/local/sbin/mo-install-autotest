@@ -1,12 +1,20 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-readonly token_path=/sys/class/dmi/id/product_serial
+readonly token_path=/sys/block/vda/device/serial
 readonly expected_token=MO-INSTALL-VIRTUAL-DISK-V1
 
 read_token() {
   [[ -r "$token_path" ]] || return 1
-  tr -d '\000\r\n' < "$token_path"
+  tr -d '\000\r\n ' < "$token_path"
+}
+
+emit() {
+  local message=$1
+  printf '%s\n' "$message" >/dev/console
+  if [[ -c /dev/ttyS0 ]]; then
+    printf '%s\n' "$message" >/dev/ttyS0
+  fi
 }
 
 case "${1:-run}" in
@@ -15,6 +23,7 @@ case "${1:-run}" in
     ;;
   run)
     [[ "$(read_token 2>/dev/null || true)" == "$expected_token" ]] || exit 0
+    emit 'MO_OS_INSTALL_AUTHORIZED disk=/dev/vda'
     /usr/local/sbin/mo-install \
       --virtual \
       --disk /dev/vda \
