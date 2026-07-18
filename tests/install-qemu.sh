@@ -96,7 +96,7 @@ qemu-system-x86_64 \
   -smp 2 \
   -cdrom "$iso_path" \
   -drive "id=mo_install_disk,file=$disk,format=raw,if=none" \
-  -device virtio-blk-pci,drive=mo_install_disk,serial=MO-INSTALL-VIRTUAL-DISK-V1 \
+  -device virtio-blk-pci,drive=mo_install_disk,serial=MO-INSTALL-VDA-01 \
   -boot order=d,menu=off \
   -display none \
   -serial "file:$install_log" \
