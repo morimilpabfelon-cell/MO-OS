@@ -1,4 +1,4 @@
-name: MO OS Boot and Virtual Installer Candidate
+name: MO OS Boot and UEFI Virtual Installer Candidate
 
 on:
   push:
@@ -25,7 +25,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            qemu-system-x86 shellcheck make
+            qemu-system-x86 ovmf shellcheck make
 
       - name: Validate source tree
         shell: bash
@@ -74,7 +74,7 @@ jobs:
           set -Eeuo pipefail
           make boot-test 2>&1 | tee diagnostics/qemu-live-boot.log
 
-      - name: Install to and reboot disposable virtual disk
+      - name: Install through UEFI and reboot disposable virtual disk
         shell: bash
         env:
           MO_INSTALL_TIMEOUT: 1800
@@ -89,15 +89,15 @@ jobs:
         run: |
           set -Eeuo pipefail
           ls -lh artifacts | tee diagnostics/artifact-info.txt
-          sha256sum artifacts/mo-os-alpha-0.2-amd64.iso | tee -a diagnostics/artifact-info.txt
+          sha256sum artifacts/mo-os-alpha-0.3-amd64.iso | tee -a diagnostics/artifact-info.txt
 
       - name: Publish system candidate
         uses: actions/upload-artifact@v4
         with:
-          name: mo-os-alpha-0.2-amd64
+          name: mo-os-alpha-0.3-amd64
           path: |
-            artifacts/mo-os-alpha-0.2-amd64.iso
-            artifacts/mo-os-alpha-0.2-amd64.iso.sha256
+            artifacts/mo-os-alpha-0.3-amd64.iso
+            artifacts/mo-os-alpha-0.3-amd64.iso.sha256
           if-no-files-found: error
           retention-days: 7
           compression-level: 0
@@ -106,7 +106,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: mo-os-alpha-0.2-diagnostics
+          name: mo-os-alpha-0.3-diagnostics
           path: diagnostics/
           if-no-files-found: warn
           retention-days: 7
