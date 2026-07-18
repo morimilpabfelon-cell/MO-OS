@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-iso_path="${1:-artifacts/mo-os-alpha-0.3-amd64.iso}"
+iso_path="${1:-artifacts/mo-os-alpha-0.4-amd64.iso}"
 
 [[ -f "$iso_path" ]] || {
   echo "ISO not found: $iso_path" >&2
@@ -9,7 +9,7 @@ iso_path="${1:-artifacts/mo-os-alpha-0.3-amd64.iso}"
 }
 
 command -v xorriso >/dev/null 2>&1 || {
-  echo "xorriso is required to inspect the image." >&2
+  echo 'xorriso is required to inspect the image.' >&2
   exit 1
 }
 
