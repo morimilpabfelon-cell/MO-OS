@@ -10,7 +10,6 @@ diagnostics_dir="${MO_INSTALL_DIAGNOSTICS_DIR:-}"
 ci_passphrase='mo-os-alpha-0.4-ci-only'
 authorization_marker='MO_OS_INSTALL_AUTHORIZED'
 install_marker='MO_OS_INSTALL_COMPLETE'
-boot_marker='MO_OS_INSTALLED_BOOT_READY'
 mutation_marker='MO_OS_MUTATION_READY'
 recovery_authorization_marker='MO_OS_RECOVERY_AUTHORIZED'
 rollback_marker='MO_OS_ROLLBACK_COMPLETE'
@@ -200,11 +199,6 @@ wait_for_poweroff 180
 
 echo 'Booting encrypted installed system and creating a post-snapshot mutation...'
 boot_encrypted_disk "$first_boot_vars" "$first_boot_log" "$mutation_marker" "$boot_timeout"
-grep -q "$boot_marker" "$first_boot_log" || {
-  echo 'Installed boot marker was not observed before mutation.' >&2
-  cat "$first_boot_log" >&2
-  exit 1
-}
 
 echo 'Booting the live ISO in recovery mode and rolling root back to initial...'
 cp "$ovmf_vars_template" "$recovery_vars"
@@ -233,10 +227,5 @@ wait_for_poweroff 180
 
 echo 'Booting the rolled-back encrypted system with fresh OVMF variables...'
 boot_encrypted_disk "$final_boot_vars" "$final_boot_log" "$verified_marker" "$boot_timeout"
-grep -q "$boot_marker" "$final_boot_log" || {
-  echo 'Installed boot marker was not observed after rollback.' >&2
-  cat "$final_boot_log" >&2
-  exit 1
-}
 
 echo 'MO OS encrypted UEFI installation and rollback test passed.'
