@@ -63,6 +63,8 @@ install_autotest=config/includes.chroot/usr/local/sbin/mo-install-autotest
 recovery_autotest=config/includes.chroot/usr/local/sbin/mo-recovery-autotest
 mutation_service=config/includes.chroot/etc/systemd/system/mo-recovery-test-mutate.service
 verify_service=config/includes.chroot/etc/systemd/system/mo-recovery-verify.service
+secure_boot_test=tests/secure-boot-qemu.sh
+workflow=.github/workflows/boot-candidate.yml
 
 # Encrypted installer and recovery boundary.
 grep -Fq '[[ "$disk" == /dev/vda ]]' "$installer"
@@ -134,6 +136,34 @@ grep -Fq 'openssl genpkey -algorithm RSA' tests/update-signature.sh
 grep -Fq 'Replay protection failed' tests/update-signature.sh
 grep -Fq 'Tampered payload was accepted' tests/update-signature.sh
 grep -Fq '.snapshots/pre-update-1' tests/update-signature.sh
+
+# Secure Boot UKI boundary.
+grep -Fq 'OVMF_CODE_4M.secboot.fd' "$secure_boot_test"
+grep -Fq 'ukify build' "$secure_boot_test"
+grep -Fq -- '--secureboot-private-key="$private_key"' "$secure_boot_test"
+grep -Fq -- '--secureboot-certificate="$certificate"' "$secure_boot_test"
+grep -Fq 'sbverify --cert "$certificate" "$signed_uki"' "$secure_boot_test"
+grep -Fq 'virt-fw-vars' "$secure_boot_test"
+grep -Fq -- '--set-pk "$owner_guid" "$certificate"' "$secure_boot_test"
+grep -Fq -- '--add-kek "$owner_guid" "$certificate"' "$secure_boot_test"
+grep -Fq -- '--add-db "$owner_guid" "$certificate"' "$secure_boot_test"
+grep -Fq -- '--secure-boot' "$secure_boot_test"
+grep -Fq 'expect_marker "$workdir/signed-vars.fd"' "$secure_boot_test"
+grep -Fq "'an unsigned MO OS UKI'" "$secure_boot_test"
+grep -Fq "'a modified signed MO OS UKI'" "$secure_boot_test"
+grep -Fq "marker='MO_OS_BOOT_READY'" "$secure_boot_test"
+grep -Fq 'private_key="$workdir/mo-secure-boot-private.pem"' "$secure_boot_test"
+grep -Fq 'rm -rf "$workdir"' "$secure_boot_test"
+grep -Fq 'systemd-ukify' "$workflow"
+grep -Fq 'python3-virt-firmware' "$workflow"
+grep -Fq 'sbsigntool' "$workflow"
+grep -Fq 'make secure-boot-test' "$workflow"
+grep -Fq 'MO_SECURE_BOOT_DIAGNOSTICS_DIR' "$workflow"
+
+if find . -type f \( -name '*.key' -o -name '*private*.pem' \) -print -quit | grep -q .; then
+  echo 'Private signing key files must never be committed.' >&2
+  exit 1
+fi
 if grep -R -n --include='*.pem' --include='*.key' -- 'PRIVATE KEY' config docs 2>/dev/null; then
   echo 'Private signing key material must never be committed.' >&2
   exit 1
@@ -151,6 +181,8 @@ grep -q 'trixie-security' config/archives/mo-security.list.binary
 grep -q 'bootloader_source=/usr/share/live/build/bootloaders' build/configure.sh
 grep -q 'timeout 50' build/configure.sh
 grep -q 'set timeout=5' build/configure.sh
+grep -q 'MO OS Alpha 0.5 Secure Boot' build/configure.sh
+grep -q 'MO_OS_ALPHA_05' build/configure.sh
 
 grep -q 'mo install --virtual --firmware uefi --disk /dev/vda --erase --username NAME' "$mo_command"
 grep -q 'mo recovery rollback --virtual --firmware uefi --disk /dev/vda --snapshot NAME' "$mo_command"
@@ -160,7 +192,8 @@ grep -q 'recovery)' "$mo_command"
 grep -q 'update)' "$mo_command"
 grep -q 'make install-test' Makefile
 grep -q 'make update-test' Makefile
-grep -q '0.5.0-alpha.1' VERSION
-grep -q '0.5.0-alpha.1' config/includes.chroot/etc/mo-release
+grep -q 'make secure-boot-test' Makefile
+grep -q '0.5.0-alpha.2' VERSION
+grep -q '0.5.0-alpha.2' config/includes.chroot/etc/mo-release
 
-echo 'MO OS encrypted recovery and signed update static checks passed.'
+echo 'MO OS encrypted recovery, signed updates and Secure Boot static checks passed.'
