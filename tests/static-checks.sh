@@ -58,6 +58,8 @@ snapshot=config/includes.chroot/usr/local/sbin/mo-snapshot
 mo_command=config/includes.chroot/usr/local/bin/mo
 install_autotest=config/includes.chroot/usr/local/sbin/mo-install-autotest
 recovery_autotest=config/includes.chroot/usr/local/sbin/mo-recovery-autotest
+mutation_service=config/includes.chroot/etc/systemd/system/mo-recovery-test-mutate.service
+verify_service=config/includes.chroot/etc/systemd/system/mo-recovery-verify.service
 
 grep -Fq '[[ "$disk" == /dev/vda ]]' "$installer"
 grep -Fq '[[ "$virtual_mode" -eq 1 ]]' "$installer"
@@ -102,10 +104,16 @@ grep -q 'MO_OS_ROLLBACK_VERIFIED' config/includes.chroot/usr/local/sbin/mo-recov
 
 grep -q 'mo-recovery-autotest.service' config/includes.chroot/etc/systemd/system/mo-boot-test.target
 grep -q 'ExecStart=/bin/bash /usr/local/sbin/mo-recovery-autotest' config/includes.chroot/etc/systemd/system/mo-recovery-autotest.service
-grep -q 'ConditionPathExists=/boot/mo-recovery-test-once' config/includes.chroot/etc/systemd/system/mo-recovery-test-mutate.service
-grep -q 'ConditionPathExists=/boot/mo-recovery-test-completed' config/includes.chroot/etc/systemd/system/mo-recovery-verify.service
-grep -q 'WantedBy=multi-user.target' config/includes.chroot/etc/systemd/system/mo-recovery-test-mutate.service
-grep -q 'WantedBy=multi-user.target' config/includes.chroot/etc/systemd/system/mo-recovery-verify.service
+grep -q 'ConditionPathExists=/boot/mo-recovery-test-once' "$mutation_service"
+grep -q 'ConditionPathExists=/boot/mo-recovery-test-completed' "$verify_service"
+grep -q 'After=local-fs.target' "$mutation_service"
+grep -q 'After=local-fs.target' "$verify_service"
+grep -q 'WantedBy=multi-user.target' "$mutation_service"
+grep -q 'WantedBy=multi-user.target' "$verify_service"
+if grep -q 'mo-installed-ready.service' "$mutation_service" "$verify_service"; then
+  echo 'Recovery validation services must not depend on mo-installed-ready.service.' >&2
+  exit 1
+fi
 
 grep -q 'expect' tests/install-qemu.sh
 grep -q 'MO-RECOVERY-VDA-01' tests/install-qemu.sh
