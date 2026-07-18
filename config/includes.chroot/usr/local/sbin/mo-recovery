@@ -1,0 +1,168 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+readonly top_mount=/mnt/mo-recovery
+readonly boot_mount=/mnt/mo-recovery-boot
+readonly mapper_name=mo_recovery
+readonly mapper=/dev/mapper/$mapper_name
+readonly ci_key_path=/run/mo-ci-luks.key
+
+command_name=''
+disk=''
+firmware=''
+snapshot=''
+key_file=''
+virtual_mode=0
+non_interactive=0
+mounted=0
+crypt_opened=0
+
+usage() {
+  cat <<'USAGE'
+MO OS encrypted recovery tool
+
+Usage from the MO OS live environment:
+  mo recovery rollback --virtual --firmware uefi --disk /dev/vda --snapshot NAME
+
+Alpha 0.4 recovery accepts only /dev/vda inside QEMU/KVM. It restores only the
+root subvolume. The separate @home subvolume is preserved.
+USAGE
+}
+
+fail() {
+  echo "mo-recovery: $*" >&2
+  exit 1
+}
+
+emit() {
+  local message=$1
+  printf '%s\n' "$message" >/dev/console
+  if [[ -c /dev/ttyS0 ]]; then
+    printf '%s\n' "$message" >/dev/ttyS0
+  fi
+}
+
+# Invoked indirectly by the EXIT trap.
+# shellcheck disable=SC2317
+cleanup() {
+  if [[ "$mounted" -eq 1 ]]; then
+    if mountpoint -q "$boot_mount"; then
+      umount "$boot_mount" 2>/dev/null || true
+    fi
+    if mountpoint -q "$top_mount"; then
+      umount "$top_mount" 2>/dev/null || true
+    fi
+  fi
+  if [[ "$crypt_opened" -eq 1 ]] && [[ -b "$mapper" ]]; then
+    cryptsetup close "$mapper_name" 2>/dev/null || true
+  fi
+  if [[ "$key_file" == "$ci_key_path" ]]; then
+    rm -f "$ci_key_path" 2>/dev/null || true
+  fi
+}
+trap cleanup EXIT
+
+(($# > 0)) || { usage; exit 2; }
+command_name=$1
+shift
+
+while (($# > 0)); do
+  case "$1" in
+    --virtual) virtual_mode=1 ;;
+    --firmware)
+      shift
+      (($# > 0)) || fail '--firmware requires a value'
+      firmware=$1
+      ;;
+    --disk)
+      shift
+      (($# > 0)) || fail '--disk requires a path'
+      disk=$1
+      ;;
+    --snapshot)
+      shift
+      (($# > 0)) || fail '--snapshot requires a name'
+      snapshot=$1
+      ;;
+    --key-file)
+      shift
+      (($# > 0)) || fail '--key-file requires a path'
+      key_file=$1
+      ;;
+    --non-interactive) non_interactive=1 ;;
+    -h|--help) usage; exit 0 ;;
+    *) fail "unknown option: $1" ;;
+  esac
+  shift
+done
+
+[[ "$command_name" == rollback ]] || fail 'only rollback is implemented in Alpha 0.4'
+[[ ${EUID:-$(id -u)} -eq 0 ]] || fail 'root privileges are required'
+[[ "$virtual_mode" -eq 1 ]] || fail 'Alpha 0.4 recovery requires --virtual'
+[[ "$firmware" == uefi ]] || fail 'Alpha 0.4 recovery requires --firmware uefi'
+[[ "$disk" == /dev/vda ]] || fail 'Alpha 0.4 recovery permits only /dev/vda'
+[[ -b "$disk" ]] || fail "$disk is not a block device"
+[[ "$snapshot" =~ ^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$ ]] || fail 'snapshot name is invalid'
+
+if [[ "$non_interactive" -eq 1 ]]; then
+  [[ "$key_file" == "$ci_key_path" ]] || fail "non-interactive mode requires $ci_key_path"
+  [[ -f "$key_file" ]] || fail 'CI encryption key file is missing'
+  [[ $(stat -c '%a' "$key_file") == 600 ]] || fail 'CI encryption key file must have mode 0600'
+else
+  [[ -z "$key_file" ]] || fail '--key-file is reserved for non-interactive tests'
+fi
+
+virtualization="$(systemd-detect-virt 2>/dev/null || true)"
+case "$virtualization" in
+  qemu|kvm) ;;
+  *) fail "unsupported virtualization environment: ${virtualization:-none}" ;;
+esac
+[[ -d /sys/firmware/efi ]] || fail 'the recovery environment was not booted through UEFI'
+
+for utility in btrfs cryptsetup mount mountpoint stat systemd-detect-virt umount; do
+  command -v "$utility" >/dev/null 2>&1 || fail "missing recovery dependency: $utility"
+done
+
+boot_part="${disk}2"
+crypt_part="${disk}3"
+[[ -b "$boot_part" ]] || fail "boot partition is missing: $boot_part"
+[[ -b "$crypt_part" ]] || fail "encrypted partition is missing: $crypt_part"
+cryptsetup isLuks "$crypt_part" || fail "$crypt_part is not a LUKS container"
+
+passphrase=''
+if [[ "$non_interactive" -eq 1 ]]; then
+  cryptsetup open --key-file "$key_file" "$crypt_part" "$mapper_name"
+else
+  read -r -s -p 'LUKS passphrase: ' passphrase
+  printf '\n'
+  [[ -n "$passphrase" ]] || fail 'LUKS passphrase cannot be empty'
+  printf '%s' "$passphrase" | cryptsetup open --key-file=- "$crypt_part" "$mapper_name"
+  unset passphrase
+fi
+crypt_opened=1
+[[ -b "$mapper" ]] || fail 'recovery mapper did not appear'
+
+rm -rf "$top_mount" "$boot_mount"
+mkdir -p "$top_mount" "$boot_mount"
+mount -o subvolid=5 "$mapper" "$top_mount"
+mount "$boot_part" "$boot_mount"
+mounted=1
+
+[[ -d "$top_mount/@" ]] || fail 'active root subvolume @ is missing'
+[[ -d "$top_mount/@snapshots/$snapshot" ]] || fail "snapshot is missing: $snapshot"
+[[ "$(btrfs property get -ts "$top_mount/@snapshots/$snapshot" ro)" == 'ro=true' ]] || \
+  fail 'rollback source snapshot must be read-only'
+
+backup="pre-rollback-$(date -u +%Y%m%dT%H%M%SZ)"
+btrfs subvolume snapshot -r "$top_mount/@" "$top_mount/@snapshots/$backup"
+btrfs subvolume delete "$top_mount/@"
+btrfs subvolume snapshot "$top_mount/@snapshots/$snapshot" "$top_mount/@"
+
+if [[ "$non_interactive" -eq 1 ]]; then
+  touch "$boot_mount/mo-recovery-test-completed"
+fi
+sync
+
+message="MO_OS_ROLLBACK_COMPLETE disk=${disk} snapshot=${snapshot} backup=${backup} home=preserved"
+emit "$message"
+logger -t mo-recovery "$message" || true
