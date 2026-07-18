@@ -1,19 +1,12 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-readonly token_path=/sys/firmware/qemu_fw_cfg/by_name/opt/mo/install/raw
-readonly expected_token=virtual-disk-v1
+readonly token_path=/sys/class/dmi/id/product_serial
+readonly expected_token=MO-INSTALL-VIRTUAL-DISK-V1
 
 read_token() {
-  modprobe qemu_fw_cfg 2>/dev/null || true
-  for _ in {1..20}; do
-    if [[ -r "$token_path" ]]; then
-      tr -d '\000\r\n' < "$token_path"
-      return 0
-    fi
-    sleep 0.5
-  done
-  return 1
+  [[ -r "$token_path" ]] || return 1
+  tr -d '\000\r\n' < "$token_path"
 }
 
 case "${1:-run}" in
