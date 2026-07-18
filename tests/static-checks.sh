@@ -64,6 +64,7 @@ grep -q 'MO_OS_INSTALL_AUTHORIZED' "$autotest"
 grep -q 'MO-INSTALL-VIRTUAL-DISK-V1' "$autotest"
 grep -q '/sys/class/block/vda/serial' "$autotest"
 grep -q 'udevadm info --query=property --name=/dev/vda' "$autotest"
+grep -q '/bin/bash /usr/local/sbin/mo-install' "$autotest"
 grep -q 'virtio-blk-pci,drive=mo_install_disk,serial=MO-INSTALL-VIRTUAL-DISK-V1' tests/install-qemu.sh
 grep -q 'systemd.unit=mo-boot-test.target' build/configure.sh
 grep -q -- '--security false' build/configure.sh
@@ -73,7 +74,8 @@ grep -q 'bootloader_source=/usr/share/live/build/bootloaders' build/configure.sh
 grep -q 'timeout 50' build/configure.sh
 grep -q 'set timeout=5' build/configure.sh
 grep -q 'mo-install-autotest.service' config/includes.chroot/etc/systemd/system/mo-boot-test.target
-grep -q 'ExecStart=/usr/local/sbin/mo-install-autotest run' config/includes.chroot/etc/systemd/system/mo-install-autotest.service
+grep -q 'ExecStart=/bin/bash /usr/local/sbin/mo-install-autotest run' config/includes.chroot/etc/systemd/system/mo-install-autotest.service
+grep -q 'ExecStart=/bin/bash /usr/local/sbin/mo-installed-ready' config/includes.chroot/etc/systemd/system/mo-installed-ready.service
 grep -q 'WantedBy=multi-user.target' config/includes.chroot/etc/systemd/system/mo-installed-ready.service
 grep -q 'mo install --virtual --disk /dev/vda --erase' config/includes.chroot/usr/local/bin/mo
 grep -q 'make install-test' Makefile
