@@ -12,13 +12,14 @@ Usage: mo <command> [options]
 
 Commands:
   status      Show MO OS, encryption and filesystem status
-  doctor      Validate the terminal, installer and recovery foundation
+  doctor      Validate the terminal, recovery and trust foundation
   dev-init    Create the pinned Arch development domain
   dev         Open a shell in the Arch development domain
   dev-status  Show development-domain status
   install     Install only to an authorized disposable virtual disk
   snapshot    Create or list read-only Btrfs root snapshots
   recovery    Roll back an encrypted virtual installation from the live ISO
+  update      Verify, apply or inspect signed MO OS updates
   help        Show this help
 
 Encrypted UEFI virtual installer:
@@ -26,6 +27,11 @@ Encrypted UEFI virtual installer:
 
 Recovery from the live ISO:
   mo recovery rollback --virtual --firmware uefi --disk /dev/vda --snapshot NAME
+
+Signed updates:
+  mo update verify --bundle DIR
+  mo update apply --bundle DIR
+  mo update status
 EOF_HELP
 }
 
@@ -54,8 +60,8 @@ doctor() {
   local failures=0
   for command_name in \
     bash blkid blockdev btrfs chroot cryptsetup curl findmnt git grub-install \
-    lsblk machinectl mkfs.btrfs mkfs.ext4 mkfs.vfat mount parted rsync \
-    sha256sum systemd-nspawn tar update-grub wipefs zstd; do
+    lsblk machinectl mkfs.btrfs mkfs.ext4 mkfs.vfat mount openssl parted python3 \
+    rsync sha256sum systemd-nspawn tar update-grub wipefs zstd; do
     if command -v "$command_name" >/dev/null 2>&1; then
       printf '[ok] %s\n' "$command_name"
     else
@@ -64,7 +70,7 @@ doctor() {
     fi
   done
   [[ -r "$release_file" ]] || { echo '[missing] /etc/mo-release' >&2; failures=$((failures + 1)); }
-  for helper in mo-install mo-recovery mo-snapshot; do
+  for helper in mo-install mo-recovery mo-snapshot mo-update; do
     [[ -r "/usr/local/sbin/$helper" ]] || {
       echo "[missing] $helper" >&2
       failures=$((failures + 1))
@@ -74,7 +80,7 @@ doctor() {
     echo "MO OS has $failures missing requirement(s)." >&2
     return 1
   fi
-  echo 'MO OS encrypted installer, snapshot and recovery foundation is healthy.'
+  echo 'MO OS encrypted recovery and signed-update foundation is healthy.'
 }
 
 dev_init() {
@@ -113,6 +119,22 @@ recovery() {
   exec sudo /bin/bash /usr/local/sbin/mo-recovery "$@"
 }
 
+update() {
+  shift
+  case "${1:-status}" in
+    verify|status)
+      exec /bin/bash /usr/local/sbin/mo-update "$@"
+      ;;
+    apply)
+      exec sudo /bin/bash /usr/local/sbin/mo-update "$@"
+      ;;
+    *)
+      echo 'Usage: mo update {verify|apply|status} [options]' >&2
+      exit 2
+      ;;
+  esac
+}
+
 case "${1:-help}" in
   status) status ;;
   doctor) doctor ;;
@@ -122,6 +144,7 @@ case "${1:-help}" in
   install) install "$@" ;;
   snapshot) snapshot "$@" ;;
   recovery) recovery "$@" ;;
+  update) update "$@" ;;
   help|-h|--help) show_help ;;
   *) echo "Unknown command: $1" >&2; show_help >&2; exit 2 ;;
 esac
