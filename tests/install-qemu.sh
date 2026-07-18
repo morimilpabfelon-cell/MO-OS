@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-iso_path="${1:-artifacts/mo-os-alpha-0.2-amd64.iso}"
+iso_path="${1:-artifacts/mo-os-alpha-0.3-amd64.iso}"
 authorization_timeout="${MO_INSTALL_AUTH_TIMEOUT:-180}"
-install_timeout="${MO_INSTALL_TIMEOUT:-1200}"
+install_timeout="${MO_INSTALL_TIMEOUT:-1800}"
 boot_timeout="${MO_INSTALLED_BOOT_TIMEOUT:-300}"
 diagnostics_dir="${MO_INSTALL_DIAGNOSTICS_DIR:-}"
 authorization_marker='MO_OS_INSTALL_AUTHORIZED'
@@ -18,8 +18,36 @@ for command_name in grep qemu-system-x86_64 truncate; do
   }
 done
 
+find_ovmf() {
+  local code vars
+  for code in \
+    /usr/share/OVMF/OVMF_CODE_4M.fd \
+    /usr/share/OVMF/OVMF_CODE.fd; do
+    [[ -f "$code" ]] || continue
+    case "$code" in
+      *_4M.fd) vars=/usr/share/OVMF/OVMF_VARS_4M.fd ;;
+      *) vars=/usr/share/OVMF/OVMF_VARS.fd ;;
+    esac
+    if [[ -f "$vars" ]]; then
+      printf '%s\n%s\n' "$code" "$vars"
+      return 0
+    fi
+  done
+  return 1
+}
+
+mapfile -t ovmf_paths < <(find_ovmf)
+((${#ovmf_paths[@]} == 2)) || {
+  echo 'OVMF firmware was not found. Install the ovmf package.' >&2
+  exit 1
+}
+ovmf_code=${ovmf_paths[0]}
+ovmf_vars_template=${ovmf_paths[1]}
+
 workdir="$(mktemp -d)"
 disk="$workdir/mo-os-virtual.raw"
+install_vars="$workdir/install-vars.fd"
+boot_vars="$workdir/boot-vars.fd"
 install_log="$workdir/install-serial.log"
 boot_log="$workdir/installed-serial.log"
 qemu_pid=''
@@ -27,12 +55,9 @@ qemu_pid=''
 copy_diagnostics() {
   [[ -n "$diagnostics_dir" ]] || return 0
   mkdir -p "$diagnostics_dir"
-  if [[ -f "$install_log" ]]; then
-    cp "$install_log" "$diagnostics_dir/"
-  fi
-  if [[ -f "$boot_log" ]]; then
-    cp "$boot_log" "$diagnostics_dir/"
-  fi
+  for file in "$install_log" "$boot_log"; do
+    [[ -f "$file" ]] && cp "$file" "$diagnostics_dir/"
+  done
 }
 
 # Invoked indirectly by the EXIT trap.
@@ -48,11 +73,8 @@ cleanup() {
 trap cleanup EXIT
 
 wait_for_marker() {
-  local log_file=$1
-  local marker=$2
-  local timeout_seconds=$3
+  local log_file=$1 marker=$2 timeout_seconds=$3
   local deadline=$((SECONDS + timeout_seconds))
-
   while ((SECONDS < deadline)); do
     if grep -q "$marker" "$log_file" 2>/dev/null; then
       grep "$marker" "$log_file" | tail -n 1
@@ -65,7 +87,6 @@ wait_for_marker() {
     fi
     sleep 2
   done
-
   echo "Timed out waiting for marker: $marker" >&2
   cat "$log_file" >&2 || true
   return 1
@@ -87,13 +108,17 @@ wait_for_poweroff() {
 }
 
 truncate -s 12G "$disk"
+cp "$ovmf_vars_template" "$install_vars"
 : > "$install_log"
 
-echo 'Booting live ISO and installing onto disposable /dev/vda...'
+echo 'Booting live ISO through OVMF and installing onto disposable /dev/vda...'
 qemu-system-x86_64 \
+  -machine q35 \
   -accel tcg,thread=multi \
   -m 2048 \
   -smp 2 \
+  -drive "if=pflash,format=raw,readonly=on,file=$ovmf_code" \
+  -drive "if=pflash,format=raw,file=$install_vars" \
   -cdrom "$iso_path" \
   -drive "id=mo_install_disk,file=$disk,format=raw,if=none" \
   -device virtio-blk-pci,drive=mo_install_disk,serial=MO-INSTALL-VDA-01 \
@@ -109,12 +134,16 @@ wait_for_marker "$install_log" "$authorization_marker" "$authorization_timeout"
 wait_for_marker "$install_log" "$install_marker" "$install_timeout"
 wait_for_poweroff 120
 
+cp "$ovmf_vars_template" "$boot_vars"
 : > "$boot_log"
-echo 'Booting installed virtual disk without the ISO...'
+echo 'Booting installed disk through fresh OVMF variables without the ISO...'
 qemu-system-x86_64 \
+  -machine q35 \
   -accel tcg,thread=multi \
   -m 1536 \
   -smp 2 \
+  -drive "if=pflash,format=raw,readonly=on,file=$ovmf_code" \
+  -drive "if=pflash,format=raw,file=$boot_vars" \
   -drive "file=$disk,format=raw,if=virtio" \
   -boot order=c,menu=off \
   -display none \
@@ -125,4 +154,4 @@ qemu-system-x86_64 \
 qemu_pid=$!
 
 wait_for_marker "$boot_log" "$boot_marker" "$boot_timeout"
-echo 'MO OS virtual disk installation test passed.'
+echo 'MO OS UEFI virtual disk installation test passed.'
