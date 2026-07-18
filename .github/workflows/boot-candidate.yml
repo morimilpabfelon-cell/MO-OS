@@ -1,4 +1,4 @@
-name: MO OS Boot and UEFI Virtual Installer Candidate
+name: MO OS Encrypted Recovery Candidate
 
 on:
   push:
@@ -14,9 +14,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build-boot-install:
+  build-boot-install-recover:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 150
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -25,7 +25,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            qemu-system-x86 ovmf shellcheck make
+            expect qemu-system-x86 ovmf shellcheck make
 
       - name: Validate source tree
         shell: bash
@@ -74,30 +74,31 @@ jobs:
           set -Eeuo pipefail
           make boot-test 2>&1 | tee diagnostics/qemu-live-boot.log
 
-      - name: Install through UEFI and reboot disposable virtual disk
+      - name: Install encrypted root, mutate, roll back and reboot
         shell: bash
         env:
           MO_INSTALL_TIMEOUT: 1800
-          MO_INSTALLED_BOOT_TIMEOUT: 300
+          MO_INSTALLED_BOOT_TIMEOUT: 480
+          MO_RECOVERY_TIMEOUT: 1200
           MO_INSTALL_DIAGNOSTICS_DIR: diagnostics/installer
         run: |
           set -Eeuo pipefail
-          make install-test 2>&1 | tee diagnostics/qemu-install-test.log
+          make install-test 2>&1 | tee diagnostics/qemu-encrypted-recovery-test.log
 
       - name: Record artifact metadata
         shell: bash
         run: |
           set -Eeuo pipefail
           ls -lh artifacts | tee diagnostics/artifact-info.txt
-          sha256sum artifacts/mo-os-alpha-0.3-amd64.iso | tee -a diagnostics/artifact-info.txt
+          sha256sum artifacts/mo-os-alpha-0.4-amd64.iso | tee -a diagnostics/artifact-info.txt
 
       - name: Publish system candidate
         uses: actions/upload-artifact@v4
         with:
-          name: mo-os-alpha-0.3-amd64
+          name: mo-os-alpha-0.4-amd64
           path: |
-            artifacts/mo-os-alpha-0.3-amd64.iso
-            artifacts/mo-os-alpha-0.3-amd64.iso.sha256
+            artifacts/mo-os-alpha-0.4-amd64.iso
+            artifacts/mo-os-alpha-0.4-amd64.iso.sha256
           if-no-files-found: error
           retention-days: 7
           compression-level: 0
@@ -106,7 +107,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: mo-os-alpha-0.3-diagnostics
+          name: mo-os-alpha-0.4-diagnostics
           path: diagnostics/
           if-no-files-found: warn
           retention-days: 7
