@@ -63,12 +63,12 @@ MANIFEST
 openssl dgst -sha256 -sign "$workdir/keys/update-private.pem" \
   -out "$workdir/bundle/manifest.sig" "$workdir/bundle/manifest.env"
 
-"$update_script" verify \
+/bin/bash "$update_script" verify \
   --bundle "$workdir/bundle" \
   --trust-key "$workdir/keys/update-public.pem" \
   | grep -Fxq 'MO_OS_UPDATE_VERIFIED'
 
-MO_UPDATE_ALLOW_TEST_ROOT=1 "$update_script" apply \
+MO_UPDATE_ALLOW_TEST_ROOT=1 /bin/bash "$update_script" apply \
   --root "$root_mount" \
   --bundle "$workdir/bundle" \
   --trust-key "$workdir/keys/update-public.pem" \
@@ -78,7 +78,7 @@ grep -Fxq '0.5.0-alpha.test' "$root_mount/etc/mo-update-version"
 grep -Fxq '1' "$root_mount/var/lib/mo-update/sequence"
 btrfs subvolume show "$root_mount/.snapshots/pre-update-1" >/dev/null
 
-if MO_UPDATE_ALLOW_TEST_ROOT=1 "$update_script" apply \
+if MO_UPDATE_ALLOW_TEST_ROOT=1 /bin/bash "$update_script" apply \
   --root "$root_mount" \
   --bundle "$workdir/bundle" \
   --trust-key "$workdir/keys/update-public.pem" >/dev/null 2>&1; then
@@ -87,7 +87,7 @@ if MO_UPDATE_ALLOW_TEST_ROOT=1 "$update_script" apply \
 fi
 
 printf '%s\n' 'tampered' >> "$workdir/bundle/payload.tar"
-if "$update_script" verify \
+if /bin/bash "$update_script" verify \
   --bundle "$workdir/bundle" \
   --trust-key "$workdir/keys/update-public.pem" >/dev/null 2>&1; then
   echo 'Tampered payload was accepted.' >&2
