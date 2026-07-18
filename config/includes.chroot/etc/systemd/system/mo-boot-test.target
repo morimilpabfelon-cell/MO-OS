@@ -2,5 +2,5 @@
 Description=MO OS boot validation target
 Requires=multi-user.target
 After=multi-user.target
-Wants=mo-boot-ready.service mo-install-autotest.service
+Wants=mo-boot-ready.service mo-install-autotest.service mo-recovery-autotest.service
 AllowIsolate=yes
