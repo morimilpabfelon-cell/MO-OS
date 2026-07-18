@@ -95,7 +95,7 @@ qemu-system-x86_64 \
   -cdrom "$iso_path" \
   -drive "file=$disk,format=raw,if=virtio" \
   -boot order=d,menu=off \
-  -fw_cfg name=opt/mo/install,string=virtual-disk-v1 \
+  -smbios type=1,serial=MO-INSTALL-VIRTUAL-DISK-V1 \
   -display none \
   -serial "file:$install_log" \
   -monitor none \
