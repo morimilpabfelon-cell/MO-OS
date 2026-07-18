@@ -63,9 +63,10 @@ validate_bundle() {
       allowed["MO_UPDATE_PAYLOAD"]=1
       allowed["MO_UPDATE_SHA256"]=1
     }
-    NF != 2 || !($1 in allowed) || seen[$1]++ { exit 1 }
+    NF != 2 || !($1 in allowed) || ($1 in seen) { exit 1 }
+    { seen[$1]=1; count++ }
     END {
-      if (length(seen) != 5) exit 1
+      if (count != 5) exit 1
     }
   ' "$manifest" || fail 'manifest structure is invalid'
 
@@ -97,6 +98,7 @@ allowed_file = pathlib.PurePosixPath("etc/mo-update-version")
 allowed_prefix = pathlib.PurePosixPath("usr/local/share/mo-update")
 count = 0
 total = 0
+seen = set()
 
 with tarfile.open(archive, "r:") as tf:
     for member in tf.getmembers():
@@ -109,10 +111,15 @@ with tarfile.open(archive, "r:") as tf:
             raise SystemExit(f"unsupported archive member: {member.name}")
         if path != allowed_file and allowed_prefix not in path.parents:
             raise SystemExit(f"path is not allowlisted: {member.name}")
+        if path in seen:
+            raise SystemExit(f"duplicate payload path: {member.name}")
+        seen.add(path)
         count += 1
         total += member.size
         if count > 128 or total > 32 * 1024 * 1024:
             raise SystemExit("payload exceeds foundation limits")
+if count == 0:
+    raise SystemExit("payload contains no files")
 PY_VALIDATE
 
   printf '%s\n' "$version" "$sequence" "$actual_sha"
@@ -151,6 +158,7 @@ apply_update() {
 
   [[ "$(stat -f -c %T "$root")" == btrfs ]] || fail 'signed updates require a Btrfs root'
   [[ "$(stat -f -c %T "$root/.snapshots")" == btrfs ]] || fail 'snapshot storage must be on Btrfs'
+  btrfs subvolume show "$root" >/dev/null 2>&1 || fail 'update root must be a Btrfs subvolume'
 
   snapshot_name="pre-update-${sequence}"
   [[ ! -e "$root/.snapshots/$snapshot_name" ]] || fail "snapshot already exists: $snapshot_name"
@@ -175,8 +183,16 @@ with tarfile.open(archive, "r:") as tf:
     for member in tf.getmembers():
         if not member.isfile():
             continue
-        destination = root.joinpath(*pathlib.PurePosixPath(member.name).parts)
+        relative = pathlib.PurePosixPath(member.name)
+        destination = root.joinpath(*relative.parts)
+        current = root
+        for component in relative.parts[:-1]:
+            current = current / component
+            if current.exists() and current.is_symlink():
+                raise SystemExit(f"symbolic parent is not permitted: {current}")
         destination.parent.mkdir(parents=True, exist_ok=True)
+        if destination.exists() and destination.is_dir():
+            raise SystemExit(f"payload destination is a directory: {destination}")
         source = tf.extractfile(member)
         if source is None:
             raise SystemExit(f"could not read payload member: {member.name}")
