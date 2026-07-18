@@ -45,17 +45,24 @@ if grep -Eq '(^|/)(apt|pacman)[[:space:]]' config/includes.chroot/usr/local/bin/
 fi
 
 installer=config/includes.chroot/usr/local/sbin/mo-install
+# The following patterns intentionally contain literal shell expressions.
+# shellcheck disable=SC2016
 grep -Fq '[[ "$disk" == /dev/vda ]]' "$installer"
+# shellcheck disable=SC2016
 grep -Fq '[[ "$virtual_mode" -eq 1 ]]' "$installer"
+# shellcheck disable=SC2016
 grep -Fq '[[ "$firmware" == uefi ]]' "$installer"
+# shellcheck disable=SC2016
 grep -Fq '[[ "$erase_confirmed" -eq 1 ]]' "$installer"
 grep -Fq '[[ -d /sys/firmware/efi ]]' "$installer"
 grep -Fq 'qemu|kvm' "$installer"
+# shellcheck disable=SC2016
 grep -Fq 'minimum_bytes=$((8 * 1024 * 1024 * 1024))' "$installer"
 grep -Fq 'mkpart ESP fat32 1MiB 513MiB' "$installer"
 grep -Fq 'set 1 esp on' "$installer"
 grep -Fq 'mkfs.vfat -F 32 -n MO_EFI' "$installer"
 grep -Fq 'useradd --create-home' "$installer"
+# shellcheck disable=SC2016
 grep -Fq 'passwd --lock "$username"' "$installer"
 grep -Fq -- '--target=x86_64-efi' "$installer"
 grep -Fq -- '--removable' "$installer"
