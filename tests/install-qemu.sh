@@ -2,9 +2,11 @@
 set -Eeuo pipefail
 
 iso_path="${1:-artifacts/mo-os-alpha-0.2-amd64.iso}"
+authorization_timeout="${MO_INSTALL_AUTH_TIMEOUT:-180}"
 install_timeout="${MO_INSTALL_TIMEOUT:-1200}"
 boot_timeout="${MO_INSTALLED_BOOT_TIMEOUT:-300}"
 diagnostics_dir="${MO_INSTALL_DIAGNOSTICS_DIR:-}"
+authorization_marker='MO_OS_INSTALL_AUTHORIZED'
 install_marker='MO_OS_INSTALL_COMPLETE'
 boot_marker='MO_OS_INSTALLED_BOOT_READY'
 
@@ -93,9 +95,9 @@ qemu-system-x86_64 \
   -m 2048 \
   -smp 2 \
   -cdrom "$iso_path" \
-  -drive "file=$disk,format=raw,if=virtio" \
+  -drive "id=mo_install_disk,file=$disk,format=raw,if=none" \
+  -device virtio-blk-pci,drive=mo_install_disk,serial=MO-INSTALL-VIRTUAL-DISK-V1 \
   -boot order=d,menu=off \
-  -smbios type=1,serial=MO-INSTALL-VIRTUAL-DISK-V1 \
   -display none \
   -serial "file:$install_log" \
   -monitor none \
@@ -103,6 +105,7 @@ qemu-system-x86_64 \
   -nic user,model=e1000 &
 qemu_pid=$!
 
+wait_for_marker "$install_log" "$authorization_marker" "$authorization_timeout"
 wait_for_marker "$install_log" "$install_marker" "$install_timeout"
 wait_for_poweroff 120
 
