@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+readonly expected_token=MO-RECOVERY-VDA-01
+readonly key_file=/run/mo-ci-luks.key
+readonly ci_passphrase='mo-os-alpha-0.4-ci-only'
+
+read_token() {
+  local path value
+  for path in /sys/class/block/vda/serial /sys/block/vda/serial /sys/block/vda/device/serial; do
+    if [[ -r "$path" ]]; then
+      value="$(tr -d '\000\r\n ' < "$path")"
+      if [[ -n "$value" ]]; then
+        printf '%s\n' "$value"
+        return 0
+      fi
+    fi
+  done
+  if command -v udevadm >/dev/null 2>&1 && [[ -b /dev/vda ]]; then
+    value="$(udevadm info --query=property --name=/dev/vda 2>/dev/null | sed -n -E 's/^ID_SERIAL(_SHORT)?=//p' | head -n 1)"
+    value="${value//[[:space:]]/}"
+    if [[ -n "$value" ]]; then
+      printf '%s\n' "$value"
+      return 0
+    fi
+  fi
+  return 1
+}
+
+emit() {
+  local message=$1
+  printf '%s\n' "$message" >/dev/console
+  if [[ -c /dev/ttyS0 ]]; then
+    printf '%s\n' "$message" >/dev/ttyS0
+  fi
+}
+
+observed_token="$(read_token 2>/dev/null || true)"
+emit "MO_OS_RECOVERY_TOKEN disk=/dev/vda value=${observed_token:-missing}"
+[[ "$observed_token" == "$expected_token" ]] || exit 0
+
+umask 077
+printf '%s' "$ci_passphrase" > "$key_file"
+chmod 0600 "$key_file"
+emit 'MO_OS_RECOVERY_AUTHORIZED disk=/dev/vda snapshot=initial'
+/bin/bash /usr/local/sbin/mo-recovery rollback \
+  --virtual \
+  --firmware uefi \
+  --disk /dev/vda \
+  --snapshot initial \
+  --non-interactive \
+  --key-file "$key_file"
+rm -f "$key_file"
+sync
+systemctl poweroff
