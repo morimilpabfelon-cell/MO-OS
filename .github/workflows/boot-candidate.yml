@@ -1,4 +1,4 @@
-name: MO OS Trusted Updates Candidate
+name: MO OS Secure Boot Candidate
 
 on:
   push:
@@ -14,9 +14,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build-boot-install-recover-update:
+  build-boot-secure-install-recover-update:
     runs-on: ubuntu-latest
-    timeout-minutes: 160
+    timeout-minutes: 175
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -25,7 +25,9 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            btrfs-progs expect openssl qemu-system-x86 ovmf shellcheck make util-linux
+            btrfs-progs dosfstools expect mtools openssl ovmf \
+            python3-virt-firmware qemu-system-x86 sbsigntool shellcheck \
+            systemd-boot-efi systemd-ukify util-linux uuid-runtime xorriso make
 
       - name: Validate source tree
         shell: bash
@@ -69,8 +71,17 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          sudo apt-get install -y --no-install-recommends xorriso
           make verify 2>&1 | tee diagnostics/iso-verify.log
+
+      - name: Validate OVMF Secure Boot with signed UKI
+        shell: bash
+        env:
+          MO_SECURE_BOOT_TIMEOUT: 420
+          MO_SECURE_BOOT_REJECTION_TIMEOUT: 75
+          MO_SECURE_BOOT_DIAGNOSTICS_DIR: diagnostics/secure-boot
+        run: |
+          set -Eeuo pipefail
+          make secure-boot-test 2>&1 | tee diagnostics/qemu-secure-boot-test.log
 
       - name: Boot live ISO in QEMU
         shell: bash
@@ -113,7 +124,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: mo-os-alpha-0.5-diagnostics
+          name: mo-os-alpha-0.5-secure-boot-diagnostics
           path: diagnostics/
           if-no-files-found: warn
           retention-days: 7
