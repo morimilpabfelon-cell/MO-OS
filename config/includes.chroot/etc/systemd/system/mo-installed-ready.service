@@ -1,0 +1,12 @@
+[Unit]
+Description=Emit MO OS installed-system readiness signal
+After=multi-user.target
+ConditionPathExists=/etc/mo-installed
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash /usr/local/sbin/mo-installed-ready
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

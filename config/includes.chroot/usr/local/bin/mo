@@ -5,31 +5,41 @@ release_file=/etc/mo-release
 machine_name=mo-dev
 
 show_help() {
-  cat <<'EOF'
+  cat <<'EOF_HELP'
 MO OS command interface
 
-Usage: mo <command>
+Usage: mo <command> [options]
 
 Commands:
   status      Show MO OS and kernel status
-  doctor      Validate the terminal foundation
+  doctor      Validate the terminal and installer foundation
   dev-init    Create the pinned Arch development domain
   dev         Open a shell in the Arch development domain
   dev-status  Show development-domain status
-  install     Show disk-installer status
+  install     Install only to an authorized disposable virtual disk
   help        Show this help
-EOF
+
+Virtual installer:
+  mo install --virtual --disk /dev/vda --erase
+EOF_HELP
 }
 
 status() {
   [[ -r "$release_file" ]] && cat "$release_file"
   printf 'KERNEL="%s"\n' "$(uname -r)"
   printf 'VIRTUALIZATION="%s"\n' "$(systemd-detect-virt 2>/dev/null || echo none)"
+  if [[ -r /etc/mo-installed ]]; then
+    echo 'INSTALLATION="persistent"'
+  else
+    echo 'INSTALLATION="live"'
+  fi
 }
 
 doctor() {
   local failures=0
-  for command_name in bash git curl systemd-nspawn machinectl sha256sum tar zstd; do
+  for command_name in \
+    bash blkid blockdev chroot curl git grub-install lsblk machinectl mkfs.ext4 \
+    mount parted rsync sha256sum systemd-nspawn tar update-grub wipefs zstd; do
     if command -v "$command_name" >/dev/null 2>&1; then
       printf '[ok] %s\n' "$command_name"
     else
@@ -38,11 +48,12 @@ doctor() {
     fi
   done
   [[ -r "$release_file" ]] || { echo '[missing] /etc/mo-release' >&2; failures=$((failures + 1)); }
+  [[ -x /usr/local/sbin/mo-install ]] || { echo '[missing] mo-install' >&2; failures=$((failures + 1)); }
   if ((failures > 0)); then
-    echo "MO OS foundation has $failures missing requirement(s)." >&2
+    echo "MO OS has $failures missing requirement(s)." >&2
     return 1
   fi
-  echo 'MO OS terminal foundation is healthy.'
+  echo 'MO OS terminal and virtual-installer foundation is healthy.'
 }
 
 dev_init() {
@@ -66,12 +77,9 @@ dev_status() {
   fi
 }
 
-installer_status() {
-  cat <<'EOF'
-Disk installation is disabled in Alpha 0.1.
-MO OS must first pass installer tests on disposable virtual disks.
-EOF
-  return 2
+install() {
+  shift
+  exec sudo /usr/local/sbin/mo-install "$@"
 }
 
 case "${1:-help}" in
@@ -80,7 +88,7 @@ case "${1:-help}" in
   dev-init) dev_init ;;
   dev) dev_shell ;;
   dev-status) dev_status ;;
-  install) installer_status ;;
+  install) install "$@" ;;
   help|-h|--help) show_help ;;
   *) echo "Unknown command: $1" >&2; show_help >&2; exit 2 ;;
 esac

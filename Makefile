@@ -1,18 +1,19 @@
-.PHONY: help check configure iso verify boot-test run clean
+.PHONY: help check configure iso verify boot-test install-test run clean
 
 SHELL := /bin/bash
-ISO := artifacts/mo-os-alpha-0.1-amd64.iso
+ISO := artifacts/mo-os-alpha-0.2-amd64.iso
 
 help:
 	@printf '%s\n' \
 	  'MO OS build commands' \
-	  '  make check       Static validation' \
-	  '  make configure   Generate live-build state' \
-	  '  sudo make iso    Build the bootable ISO' \
-	  '  make verify      Inspect and hash the ISO' \
-	  '  make boot-test   Verify terminal boot in QEMU' \
-	  '  make run         Boot the ISO interactively' \
-	  '  sudo make clean  Remove live-build output'
+	  '  make check        Static validation' \
+	  '  make configure    Generate live-build state' \
+	  '  sudo make iso     Build the bootable ISO' \
+	  '  make verify       Inspect and hash the ISO' \
+	  '  make boot-test    Verify terminal boot in QEMU' \
+	  '  make install-test Install and reboot a disposable QEMU disk' \
+	  '  make run          Boot the ISO interactively' \
+	  '  sudo make clean   Remove live-build output'
 
 check:
 	@bash tests/static-checks.sh
@@ -28,6 +29,9 @@ verify:
 
 boot-test:
 	@bash tests/boot-qemu.sh "$(ISO)"
+
+install-test:
+	@bash tests/install-qemu.sh "$(ISO)"
 
 run:
 	@test -f "$(ISO)" || { echo "Missing $(ISO). Build it first." >&2; exit 1; }
