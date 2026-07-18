@@ -104,6 +104,8 @@ grep -q 'mo-recovery-autotest.service' config/includes.chroot/etc/systemd/system
 grep -q 'ExecStart=/bin/bash /usr/local/sbin/mo-recovery-autotest' config/includes.chroot/etc/systemd/system/mo-recovery-autotest.service
 grep -q 'ConditionPathExists=/boot/mo-recovery-test-once' config/includes.chroot/etc/systemd/system/mo-recovery-test-mutate.service
 grep -q 'ConditionPathExists=/boot/mo-recovery-test-completed' config/includes.chroot/etc/systemd/system/mo-recovery-verify.service
+grep -q 'WantedBy=multi-user.target' config/includes.chroot/etc/systemd/system/mo-recovery-test-mutate.service
+grep -q 'WantedBy=multi-user.target' config/includes.chroot/etc/systemd/system/mo-recovery-verify.service
 
 grep -q 'expect' tests/install-qemu.sh
 grep -q 'MO-RECOVERY-VDA-01' tests/install-qemu.sh
