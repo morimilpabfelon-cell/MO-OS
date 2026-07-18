@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+trigger=/boot/mo-recovery-test-once
+[[ -f "$trigger" ]] || exit 0
+printf '%s\n' 'This file must disappear after rollback.' > /etc/mo-recovery-mutation
+rm -f "$trigger"
+message='MO_OS_MUTATION_READY path=/etc/mo-recovery-mutation'
+printf '%s\n' "$message" >/dev/console
+if [[ -c /dev/ttyS0 ]]; then
+  printf '%s\n' "$message" >/dev/ttyS0
+fi
+logger -t mo-recovery-test "$message" || true
+sync
+systemctl poweroff
