@@ -10,6 +10,7 @@ e2fsprogs
 efibootmgr
 git
 gnupg
+grub-efi-amd64-bin
 grub-pc-bin
 grub2-common
 initramfs-tools
