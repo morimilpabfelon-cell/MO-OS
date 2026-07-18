@@ -12,21 +12,29 @@ Para el usuario es un solo sistema. `apt` y `pacman` nunca administran la misma 
 
 ## Estado actual
 
-**Alpha 0.5 — Trusted Updates Foundation**
+**Alpha 0.5 — Secure Boot UKI Foundation (`0.5.0-alpha.2`)**
 
-Esta fase conserva todo lo validado en Alpha 0.4 y añade:
+Esta fase conserva las actualizaciones firmadas de Alpha 0.5.1 y añade una cadena de arranque confiable virtual:
 
-- Verificación RSA-SHA256 de manifiestos de actualización.
-- SHA-256 obligatorio del contenido firmado.
-- Número de secuencia monotónico para impedir repetición o retroceso.
+- Extracción del kernel y del initramfs reales desde la ISO de MO OS.
+- Construcción de una Unified Kernel Image mediante `ukify`.
+- Firma temporal RSA-3072/SHA-256 del UKI.
+- Enrolamiento temporal de PK, KEK y `db` dentro de una variable store OVMF nueva.
+- Arranque bajo OVMF con Secure Boot y SMM activados.
+- Aceptación obligatoria del UKI firmado hasta alcanzar `MO_OS_BOOT_READY`.
+- Rechazo obligatorio del mismo UKI sin firma.
+- Rechazo obligatorio del UKI firmado después de modificar un byte.
+- Eliminación de la clave privada temporal al finalizar cada ejecución.
+
+Las actualizaciones continúan protegidas mediante:
+
+- Verificación RSA-SHA256 del manifiesto.
+- SHA-256 obligatorio del payload.
+- Secuencia monotónica contra replay y downgrade.
 - Snapshot Btrfs de solo lectura antes de aplicar cambios.
-- Lista estricta de rutas permitidas.
-- Rechazo de rutas absolutas, traversal, enlaces y archivos especiales.
-- Límites de 128 archivos y 32 MiB durante esta primera fundación.
-- Prueba automática de firma válida, manipulación, snapshot y anti-replay.
-- Comando nativo `mo update`.
+- Lista estricta de rutas y límites de tamaño.
 
-La raíz persistente continúa protegida mediante LUKS2 y Btrfs:
+## Raíz cifrada y recuperación
 
 ```text
 GPT
@@ -43,13 +51,15 @@ GPT
 
 ## Frontera de confianza
 
-La clave pública de actualizaciones se ubicará en:
+Las claves privadas de actualizaciones y Secure Boot no deben entrar al repositorio, ISO, sistema instalado, bundle ni artefactos.
+
+La futura clave pública de actualizaciones se ubicará en:
 
 ```text
 /etc/mo/trust/update-public.pem
 ```
 
-La rama Alpha 0.5 no incluye todavía una clave pública de producción. CI genera una clave temporal para las pruebas. Ninguna clave privada debe entrar al repositorio, ISO, sistema instalado, bundle o artefactos.
+Alpha 0.5 usa claves efímeras generadas por CI. Esto demuestra la cadena criptográfica, pero todavía no define custodia, rotación, revocación ni claves de producción.
 
 ## Instalación virtual cifrada
 
@@ -86,9 +96,12 @@ artifacts/mo-os-alpha-0.5-amd64.iso
 
 ```bash
 make boot-test
+make secure-boot-test
 sudo make update-test
 make install-test
 ```
+
+`secure-boot-test` construye un UKI desde el kernel y el initramfs de la ISO, firma el UKI, enrola una variable store OVMF desechable, exige un arranque válido y comprueba el rechazo de las variantes sin firma y alterada.
 
 `update-test` genera una clave temporal, firma un bundle, crea una raíz Btrfs desechable, aplica la actualización, comprueba el snapshot previo, rechaza repetir la secuencia y rechaza una copia alterada.
 
@@ -108,4 +121,4 @@ mo update apply --bundle DIRECTORIO
 mo update status
 ```
 
-La instalación sobre hardware real permanecerá bloqueada hasta validar Secure Boot, rotación y revocación de claves, recuperación ante actualizaciones interrumpidas, copias externas y una matriz del hardware específico de la laptop.
+La instalación sobre hardware real permanecerá bloqueada hasta validar claves de producción, rotación y revocación, recuperación ante actualizaciones interrumpidas, copias externas y una matriz del hardware específico de la laptop.

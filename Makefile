@@ -1,4 +1,4 @@
-.PHONY: help check configure iso verify boot-test install-test update-test run clean
+.PHONY: help check configure iso verify boot-test secure-boot-test install-test update-test run clean
 
 SHELL := /bin/bash
 ISO := artifacts/mo-os-alpha-0.5-amd64.iso
@@ -6,15 +6,16 @@ ISO := artifacts/mo-os-alpha-0.5-amd64.iso
 help:
 	@printf '%s\n' \
 	  'MO OS build commands' \
-	  '  make check        Static validation' \
-	  '  make configure    Generate live-build state' \
-	  '  sudo make iso     Build the bootable ISO' \
-	  '  make verify       Inspect and hash the ISO' \
-	  '  make boot-test    Verify terminal boot in QEMU' \
-	  '  make install-test Install, unlock, mutate, roll back and reboot a disposable QEMU disk' \
-	  '  sudo make update-test Verify signatures, snapshots, tamper rejection and anti-replay' \
-	  '  make run          Boot the ISO interactively' \
-	  '  sudo make clean   Remove live-build output'
+	  '  make check             Static validation' \
+	  '  make configure         Generate live-build state' \
+	  '  sudo make iso          Build the bootable ISO' \
+	  '  make verify            Inspect and hash the ISO' \
+	  '  make boot-test         Verify terminal boot in QEMU' \
+	  '  make secure-boot-test  Boot a signed UKI and reject unsigned or modified UKIs' \
+	  '  make install-test      Install, unlock, mutate, roll back and reboot a disposable QEMU disk' \
+	  '  sudo make update-test  Verify signatures, snapshots, tamper rejection and anti-replay' \
+	  '  make run               Boot the ISO interactively' \
+	  '  sudo make clean        Remove live-build output'
 
 check:
 	@bash tests/static-checks.sh
@@ -30,6 +31,9 @@ verify:
 
 boot-test:
 	@bash tests/boot-qemu.sh "$(ISO)"
+
+secure-boot-test:
+	@bash tests/secure-boot-qemu.sh "$(ISO)"
 
 install-test:
 	@bash tests/install-qemu.sh "$(ISO)"
