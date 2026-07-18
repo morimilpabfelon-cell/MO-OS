@@ -97,7 +97,7 @@ extract_iso_component() {
 create_boot_disk() {
   local efi_binary=$1 disk_image=$2
   truncate -s 128M "$disk_image"
-  mkfs.vfat -n MO_SECURE_BOOT "$disk_image" >/dev/null
+  mkfs.vfat -n MO_SECBOOT "$disk_image" >/dev/null
   mmd -i "$disk_image" ::/EFI ::/EFI/BOOT
   mcopy -i "$disk_image" "$efi_binary" ::/EFI/BOOT/BOOTX64.EFI
 }
