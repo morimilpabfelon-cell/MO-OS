@@ -5,26 +5,40 @@ readonly minimum_bytes=$((8 * 1024 * 1024 * 1024))
 readonly target=/mnt/mo-target
 
 disk=''
+firmware=''
+username=''
 virtual_mode=0
 erase_confirmed=0
 non_interactive=0
+lock_user=0
 mounted=0
 
 usage() {
   cat <<'USAGE'
-MO OS virtual disk installer
+MO OS UEFI virtual disk installer
 
 Usage:
-  mo install --virtual --disk /dev/vda --erase [--non-interactive]
+  mo install --virtual --firmware uefi --disk /dev/vda --erase --username NAME
+  mo install --virtual --firmware uefi --disk /dev/vda --erase \
+    --username NAME --lock-user --non-interactive
 
-Alpha 0.2 accepts only /dev/vda inside QEMU/KVM. Physical disks, SATA disks,
-NVMe devices and every other target are rejected.
+Alpha 0.3 accepts only /dev/vda inside QEMU/KVM. Physical disks, SATA disks,
+NVMe devices and every other target are rejected. Interactive installations
+require a password. CI may create a locked test account with --lock-user.
 USAGE
 }
 
 fail() {
   echo "mo-install: $*" >&2
   exit 1
+}
+
+emit() {
+  local message=$1
+  printf '%s\n' "$message" >/dev/console
+  if [[ -c /dev/ttyS0 ]]; then
+    printf '%s\n' "$message" >/dev/ttyS0
+  fi
 }
 
 # Invoked indirectly by the EXIT trap.
@@ -36,6 +50,9 @@ cleanup() {
         umount -R "$target/$path" 2>/dev/null || true
       fi
     done
+    if mountpoint -q "$target/boot/efi"; then
+      umount "$target/boot/efi" 2>/dev/null || true
+    fi
     if mountpoint -q "$target"; then
       umount "$target" 2>/dev/null || true
     fi
@@ -46,13 +63,24 @@ trap cleanup EXIT
 while (($# > 0)); do
   case "$1" in
     --virtual) virtual_mode=1 ;;
+    --firmware)
+      shift
+      (($# > 0)) || fail '--firmware requires a value'
+      firmware="$1"
+      ;;
     --disk)
       shift
       (($# > 0)) || fail '--disk requires an explicit device path'
       disk="$1"
       ;;
+    --username)
+      shift
+      (($# > 0)) || fail '--username requires a value'
+      username="$1"
+      ;;
     --erase) erase_confirmed=1 ;;
     --non-interactive) non_interactive=1 ;;
+    --lock-user) lock_user=1 ;;
     -h|--help) usage; exit 0 ;;
     *) fail "unknown option: $1" ;;
   esac
@@ -60,11 +88,20 @@ while (($# > 0)); do
 done
 
 [[ ${EUID:-$(id -u)} -eq 0 ]] || fail 'root privileges are required'
-[[ "$virtual_mode" -eq 1 ]] || fail 'the Alpha 0.2 installer requires --virtual'
+[[ "$virtual_mode" -eq 1 ]] || fail 'the Alpha 0.3 installer requires --virtual'
+[[ "$firmware" == uefi ]] || fail 'Alpha 0.3 requires --firmware uefi'
 [[ "$erase_confirmed" -eq 1 ]] || fail 'destructive installation requires --erase'
 [[ -n "$disk" ]] || fail 'no disk was specified'
-[[ "$disk" == /dev/vda ]] || fail 'Alpha 0.2 permits only the QEMU/KVM disk /dev/vda'
+[[ "$disk" == /dev/vda ]] || fail 'Alpha 0.3 permits only the QEMU/KVM disk /dev/vda'
 [[ -b "$disk" ]] || fail "$disk is not a block device"
+[[ "$username" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] || fail 'username is missing or invalid'
+[[ "$username" != root ]] || fail 'root cannot be used as the regular account'
+
+if [[ "$non_interactive" -eq 1 ]]; then
+  [[ "$lock_user" -eq 1 ]] || fail 'non-interactive mode requires --lock-user'
+else
+  [[ "$lock_user" -eq 0 ]] || fail '--lock-user is reserved for non-interactive tests'
+fi
 
 virtualization="$(systemd-detect-virt 2>/dev/null || true)"
 case "$virtualization" in
@@ -72,6 +109,7 @@ case "$virtualization" in
   *) fail "unsupported virtualization environment: ${virtualization:-none}" ;;
 esac
 
+[[ -d /sys/firmware/efi ]] || fail 'the live system was not booted through UEFI'
 [[ "$(lsblk -dnro TYPE "$disk")" == disk ]] || fail "$disk is not a whole disk"
 size_bytes="$(blockdev --getsize64 "$disk")"
 [[ "$size_bytes" =~ ^[0-9]+$ ]] || fail 'could not determine disk capacity'
@@ -82,40 +120,55 @@ if lsblk -nrpo NAME,MOUNTPOINT "$disk" | awk 'NF > 1 { found=1 } END { exit !fou
 fi
 
 for command_name in \
-  blkid blockdev chroot grub-install lsblk mkfs.ext4 mount mountpoint \
+  blkid blockdev chroot grub-install lsblk mkfs.ext4 mkfs.vfat mount mountpoint \
   parted partprobe rsync systemd-detect-virt systemd-machine-id-setup \
   udevadm umount update-grub update-initramfs wipefs; do
   command -v "$command_name" >/dev/null 2>&1 || fail "missing installer dependency: $command_name"
 done
 
+password=''
 if [[ "$non_interactive" -ne 1 ]]; then
   echo "Target: $disk"
+  echo "Firmware: UEFI"
   echo "Virtualization: $virtualization"
+  echo "Account: $username"
   echo 'All data on the virtual disk will be destroyed.'
-  read -r -p 'Type ERASE-MO-VIRTUAL to continue: ' confirmation
-  [[ "$confirmation" == ERASE-MO-VIRTUAL ]] || fail 'confirmation did not match'
+  read -r -p 'Type ERASE-MO-UEFI to continue: ' confirmation
+  [[ "$confirmation" == ERASE-MO-UEFI ]] || fail 'confirmation did not match'
+  read -r -s -p "Password for $username: " password
+  printf '\n'
+  read -r -s -p 'Repeat password: ' password_repeat
+  printf '\n'
+  [[ -n "$password" ]] || fail 'password cannot be empty'
+  [[ "$password" == "$password_repeat" ]] || fail 'passwords did not match'
+  unset password_repeat
 fi
 
+esp_part="${disk}1"
 root_part="${disk}2"
 
-echo '[1/7] Partitioning disposable virtual disk'
+echo '[1/8] Partitioning disposable UEFI virtual disk'
 wipefs --all --force "$disk"
 parted --script "$disk" mklabel gpt
-parted --script "$disk" mkpart primary 1MiB 3MiB
-parted --script "$disk" set 1 bios_grub on
-parted --script "$disk" mkpart primary ext4 3MiB 100%
+parted --script "$disk" mkpart ESP fat32 1MiB 513MiB
+parted --script "$disk" set 1 esp on
+parted --script "$disk" mkpart primary ext4 513MiB 100%
 partprobe "$disk"
 udevadm settle
+[[ -b "$esp_part" ]] || fail "partition did not appear: $esp_part"
 [[ -b "$root_part" ]] || fail "partition did not appear: $root_part"
 
-echo '[2/7] Creating filesystem'
+echo '[2/8] Creating filesystems'
+mkfs.vfat -F 32 -n MO_EFI "$esp_part"
 mkfs.ext4 -F -L MO_ROOT "$root_part"
 rm -rf "$target"
 mkdir -p "$target"
 mount "$root_part" "$target"
+mkdir -p "$target/boot/efi"
+mount "$esp_part" "$target/boot/efi"
 mounted=1
 
-echo '[3/7] Copying MO OS live root'
+echo '[3/8] Copying MO OS live root'
 rsync -aHAXx --numeric-ids \
   --exclude='/dev/*' \
   --exclude='/proc/*' \
@@ -130,10 +183,13 @@ rsync -aHAXx --numeric-ids \
   / "$target/"
 
 root_uuid="$(blkid -s UUID -o value "$root_part")"
+esp_uuid="$(blkid -s UUID -o value "$esp_part")"
 [[ -n "$root_uuid" ]] || fail 'root filesystem UUID is empty'
+[[ -n "$esp_uuid" ]] || fail 'EFI filesystem UUID is empty'
 
 cat > "$target/etc/fstab" <<FSTAB
 UUID=$root_uuid / ext4 defaults,noatime 0 1
+UUID=$esp_uuid /boot/efi vfat umask=0077 0 2
 FSTAB
 printf '%s\n' 'mo-os' > "$target/etc/hostname"
 cat > "$target/etc/hosts" <<'HOSTS'
@@ -141,9 +197,10 @@ cat > "$target/etc/hosts" <<'HOSTS'
 127.0.1.1 mo-os
 ::1 localhost ip6-localhost ip6-loopback
 HOSTS
-cat > "$target/etc/mo-installed" <<'MARKER'
-MO_INSTALLATION=virtual-alpha
-MO_INSTALLER_VERSION=0.2.0-alpha.1
+cat > "$target/etc/mo-installed" <<MARKER
+MO_INSTALLATION=virtual-uefi-alpha
+MO_INSTALLER_VERSION=0.3.0-alpha.1
+MO_PRIMARY_USER=$username
 MARKER
 
 rm -f "$target/etc/machine-id"
@@ -165,22 +222,35 @@ GRUB_TERMINAL="console serial"
 GRUB_SERIAL_COMMAND="serial --speed=115200 --unit=0 --word=8 --parity=no --stop=1"
 GRUB
 
-echo '[4/7] Preparing installed system'
-chroot "$target" systemctl enable mo-installed-ready.service
+echo '[4/8] Creating persistent user'
+chroot "$target" useradd --create-home --shell /bin/bash --groups sudo "$username"
+if [[ "$non_interactive" -eq 1 ]]; then
+  chroot "$target" passwd --lock "$username" >/dev/null
+else
+  printf '%s:%s\n' "$username" "$password" | chroot "$target" chpasswd
+  unset password
+fi
 chroot "$target" passwd --lock root >/dev/null 2>&1 || true
+
+echo '[5/8] Preparing installed system'
+chroot "$target" systemctl enable mo-installed-ready.service
 chroot "$target" update-initramfs -u -k all
 
-echo '[5/7] Installing BIOS bootloader'
-chroot "$target" grub-install --target=i386-pc --recheck "$disk"
+echo '[6/8] Installing UEFI bootloader'
+chroot "$target" grub-install \
+  --target=x86_64-efi \
+  --efi-directory=/boot/efi \
+  --bootloader-id=MOOS \
+  --removable \
+  --no-nvram \
+  --recheck
 chroot "$target" update-grub
+[[ -f "$target/boot/efi/EFI/BOOT/BOOTX64.EFI" ]] || fail 'UEFI fallback loader was not created'
 
-echo '[6/7] Flushing filesystem state'
+echo '[7/8] Flushing filesystem state'
 sync
 
-echo '[7/7] Installation complete'
-message="MO_OS_INSTALL_COMPLETE disk=${disk} uuid=${root_uuid}"
-printf '%s\n' "$message" >/dev/console
-if [[ -c /dev/ttyS0 ]]; then
-  printf '%s\n' "$message" >/dev/ttyS0
-fi
+echo '[8/8] Installation complete'
+message="MO_OS_INSTALL_COMPLETE disk=${disk} firmware=uefi uuid=${root_uuid} user=${username}"
+emit "$message"
 logger -t mo-install "$message" || true
