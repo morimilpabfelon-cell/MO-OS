@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+usage() {
+  cat <<'USAGE'
+Usage:
+  mo snapshot create NAME
+  mo snapshot list
+USAGE
+}
+
+fail() {
+  echo "mo-snapshot: $*" >&2
+  exit 1
+}
+
+[[ ${EUID:-$(id -u)} -eq 0 ]] || fail 'root privileges are required'
+[[ "$(findmnt -n -o FSTYPE /)" == btrfs ]] || fail 'the root filesystem is not Btrfs'
+[[ -d /.snapshots ]] || fail '/.snapshots is not mounted'
+
+case "${1:-}" in
+  create)
+    name=${2:-}
+    [[ "$name" =~ ^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$ ]] || fail 'snapshot name is invalid'
+    [[ ! -e "/.snapshots/$name" ]] || fail "snapshot already exists: $name"
+    btrfs subvolume snapshot -r / "/.snapshots/$name"
+    printf 'MO_OS_SNAPSHOT_CREATED name=%s\n' "$name"
+    ;;
+  list)
+    btrfs subvolume list -s /.snapshots
+    ;;
+  *)
+    usage
+    exit 2
+    ;;
+esac

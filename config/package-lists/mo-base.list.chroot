@@ -3,6 +3,7 @@ btrfs-progs
 build-essential
 ca-certificates
 cryptsetup
+cryptsetup-initramfs
 curl
 debian-archive-keyring
 dosfstools

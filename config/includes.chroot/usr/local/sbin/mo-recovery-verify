@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+trigger=/boot/mo-recovery-test-completed
+[[ -f "$trigger" ]] || exit 0
+if [[ -e /etc/mo-recovery-mutation ]]; then
+  message='MO_OS_ROLLBACK_VERIFY_FAILED mutation=present'
+  printf '%s\n' "$message" >/dev/console
+  if [[ -c /dev/ttyS0 ]]; then
+    printf '%s\n' "$message" >/dev/ttyS0
+  fi
+  exit 1
+fi
+rm -f "$trigger"
+message='MO_OS_ROLLBACK_VERIFIED snapshot=initial mutation=absent home=preserved'
+printf '%s\n' "$message" >/dev/console
+if [[ -c /dev/ttyS0 ]]; then
+  printf '%s\n' "$message" >/dev/ttyS0
+fi
+logger -t mo-recovery-test "$message" || true
+sync
+systemctl poweroff

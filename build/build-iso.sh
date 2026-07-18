@@ -5,7 +5,7 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
 if [[ ${EUID:-$(id -u)} -ne 0 ]]; then
-  echo "ISO construction requires root privileges." >&2
+  echo 'ISO construction requires root privileges.' >&2
   exit 1
 fi
 
@@ -20,8 +20,8 @@ bash build/configure.sh
 mkdir -p artifacts
 lb build
 
-source_iso="live-image-amd64.hybrid.iso"
-target_iso="artifacts/mo-os-alpha-0.3-amd64.iso"
+source_iso=live-image-amd64.hybrid.iso
+target_iso=artifacts/mo-os-alpha-0.4-amd64.iso
 
 [[ -f "$source_iso" ]] || {
   echo "live-build completed without producing $source_iso" >&2

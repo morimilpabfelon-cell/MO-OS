@@ -1,0 +1,8 @@
+[Unit]
+Description=Restore the encrypted MO OS root snapshot on an authorized QEMU disk
+After=mo-boot-ready.service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash /usr/local/sbin/mo-recovery-autotest
+TimeoutStartSec=20min

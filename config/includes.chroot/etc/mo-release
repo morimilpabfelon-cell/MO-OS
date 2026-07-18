@@ -1,5 +1,5 @@
 NAME="MO OS"
 ID=mo-os
-VERSION="0.3.0-alpha.1"
-VERSION_CODENAME="uefi-installer"
+VERSION="0.4.0-alpha.1"
+VERSION_CODENAME="encrypted-recovery"
 ARCHITECTURE="amd64"
