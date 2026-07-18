@@ -8,3 +8,6 @@ ConditionPathExists=/boot/mo-recovery-test-once
 Type=oneshot
 ExecStart=/bin/bash /usr/local/sbin/mo-recovery-test-mutate
 TimeoutStartSec=2min
+
+[Install]
+WantedBy=multi-user.target
