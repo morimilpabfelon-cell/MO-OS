@@ -52,7 +52,7 @@ case "${1:-run}" in
     emit "MO_OS_INSTALL_TOKEN disk=/dev/vda value=${observed_token:-missing}"
     [[ "$observed_token" == "$expected_token" ]] || exit 0
     emit 'MO_OS_INSTALL_AUTHORIZED disk=/dev/vda'
-    /usr/local/sbin/mo-install \
+    /bin/bash /usr/local/sbin/mo-install \
       --virtual \
       --disk /dev/vda \
       --erase \
