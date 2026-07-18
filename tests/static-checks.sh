@@ -36,6 +36,8 @@ if [[ -n "$(sort "$package_file" | uniq -d)" ]]; then
   echo 'Duplicate packages detected.' >&2
   exit 1
 fi
+grep -Fxq 'grub-efi-amd64-bin' "$package_file"
+grep -Fxq 'dosfstools' "$package_file"
 
 if grep -Eq '(^|/)(apt|pacman)[[:space:]]' config/includes.chroot/usr/local/bin/mo; then
   echo 'The public mo command must not expose direct package-manager mixing.' >&2
@@ -43,17 +45,36 @@ if grep -Eq '(^|/)(apt|pacman)[[:space:]]' config/includes.chroot/usr/local/bin/
 fi
 
 installer=config/includes.chroot/usr/local/sbin/mo-install
-grep -Fq "[[ \"\$disk\" == /dev/vda ]]" "$installer"
-grep -Fq "[[ \"\$virtual_mode\" -eq 1 ]]" "$installer"
-grep -Fq "[[ \"\$erase_confirmed\" -eq 1 ]]" "$installer"
+# The following patterns intentionally contain literal shell expressions.
+# shellcheck disable=SC2016
+grep -Fq '[[ "$disk" == /dev/vda ]]' "$installer"
+# shellcheck disable=SC2016
+grep -Fq '[[ "$virtual_mode" -eq 1 ]]' "$installer"
+# shellcheck disable=SC2016
+grep -Fq '[[ "$firmware" == uefi ]]' "$installer"
+# shellcheck disable=SC2016
+grep -Fq '[[ "$erase_confirmed" -eq 1 ]]' "$installer"
+grep -Fq '[[ -d /sys/firmware/efi ]]' "$installer"
 grep -Fq 'qemu|kvm' "$installer"
-grep -Fq "minimum_bytes=\$((8 * 1024 * 1024 * 1024))" "$installer"
+# shellcheck disable=SC2016
+grep -Fq 'minimum_bytes=$((8 * 1024 * 1024 * 1024))' "$installer"
+grep -Fq 'mkpart ESP fat32 1MiB 513MiB' "$installer"
+grep -Fq 'set 1 esp on' "$installer"
+grep -Fq 'mkfs.vfat -F 32 -n MO_EFI' "$installer"
+grep -Fq 'useradd --create-home' "$installer"
+# shellcheck disable=SC2016
+grep -Fq 'passwd --lock "$username"' "$installer"
+grep -Fq -- '--target=x86_64-efi' "$installer"
+grep -Fq -- '--removable' "$installer"
+grep -Fq -- '--no-nvram' "$installer"
+grep -Fq 'EFI/BOOT/BOOTX64.EFI' "$installer"
 grep -Fq 'MO_OS_INSTALL_COMPLETE' "$installer"
 if grep -Eq "^disk=['\"]/dev/" "$installer"; then
   echo 'Installer must not define a default block device.' >&2
   exit 1
 fi
 
+mo_command=config/includes.chroot/usr/local/bin/mo
 autotest=config/includes.chroot/usr/local/sbin/mo-install-autotest
 grep -q 'archlinux-bootstrap' config/includes.chroot/usr/local/sbin/mo-dev-init
 grep -q 'archive_sha256=' config/includes.chroot/usr/local/sbin/mo-dev-init
@@ -62,10 +83,12 @@ grep -q 'MO_OS_INSTALLED_BOOT_READY' config/includes.chroot/usr/local/sbin/mo-in
 grep -q 'MO_OS_INSTALL_TOKEN' "$autotest"
 grep -q 'MO_OS_INSTALL_AUTHORIZED' "$autotest"
 grep -q 'MO-INSTALL-VDA-01' "$autotest"
-grep -q '/sys/class/block/vda/serial' "$autotest"
-grep -q 'udevadm info --query=property --name=/dev/vda' "$autotest"
 grep -q '/bin/bash /usr/local/sbin/mo-install' "$autotest"
+grep -q 'OVMF_CODE' tests/install-qemu.sh
+grep -q 'OVMF_VARS' tests/install-qemu.sh
+grep -q 'machine q35' tests/install-qemu.sh
 grep -q 'virtio-blk-pci,drive=mo_install_disk,serial=MO-INSTALL-VDA-01' tests/install-qemu.sh
+grep -q 'fresh OVMF variables' tests/install-qemu.sh
 grep -q 'systemd.unit=mo-boot-test.target' build/configure.sh
 grep -q -- '--security false' build/configure.sh
 grep -q 'trixie-security' config/archives/mo-security.list.chroot
@@ -77,7 +100,9 @@ grep -q 'mo-install-autotest.service' config/includes.chroot/etc/systemd/system/
 grep -q 'ExecStart=/bin/bash /usr/local/sbin/mo-install-autotest run' config/includes.chroot/etc/systemd/system/mo-install-autotest.service
 grep -q 'ExecStart=/bin/bash /usr/local/sbin/mo-installed-ready' config/includes.chroot/etc/systemd/system/mo-installed-ready.service
 grep -q 'WantedBy=multi-user.target' config/includes.chroot/etc/systemd/system/mo-installed-ready.service
-grep -q 'mo install --virtual --disk /dev/vda --erase' config/includes.chroot/usr/local/bin/mo
+grep -q 'mo install --virtual --firmware uefi --disk /dev/vda --erase --username NAME' "$mo_command"
 grep -q 'make install-test' Makefile
+grep -q '0.3.0-alpha.1' VERSION
+grep -q '0.3.0-alpha.1' config/includes.chroot/etc/mo-release
 
 echo 'MO OS static checks passed.'

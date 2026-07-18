@@ -21,7 +21,7 @@ mkdir -p artifacts
 lb build
 
 source_iso="live-image-amd64.hybrid.iso"
-target_iso="artifacts/mo-os-alpha-0.2-amd64.iso"
+target_iso="artifacts/mo-os-alpha-0.3-amd64.iso"
 
 [[ -f "$source_iso" ]] || {
   echo "live-build completed without producing $source_iso" >&2

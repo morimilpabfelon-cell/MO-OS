@@ -19,8 +19,8 @@ Commands:
   install     Install only to an authorized disposable virtual disk
   help        Show this help
 
-Virtual installer:
-  mo install --virtual --disk /dev/vda --erase
+UEFI virtual installer:
+  mo install --virtual --firmware uefi --disk /dev/vda --erase --username NAME
 EOF_HELP
 }
 
@@ -28,6 +28,11 @@ status() {
   [[ -r "$release_file" ]] && cat "$release_file"
   printf 'KERNEL="%s"\n' "$(uname -r)"
   printf 'VIRTUALIZATION="%s"\n' "$(systemd-detect-virt 2>/dev/null || echo none)"
+  if [[ -d /sys/firmware/efi ]]; then
+    echo 'FIRMWARE="uefi"'
+  else
+    echo 'FIRMWARE="bios"'
+  fi
   if [[ -r /etc/mo-installed ]]; then
     echo 'INSTALLATION="persistent"'
   else
@@ -39,7 +44,7 @@ doctor() {
   local failures=0
   for command_name in \
     bash blkid blockdev chroot curl git grub-install lsblk machinectl mkfs.ext4 \
-    mount parted rsync sha256sum systemd-nspawn tar update-grub wipefs zstd; do
+    mkfs.vfat mount parted rsync sha256sum systemd-nspawn tar update-grub wipefs zstd; do
     if command -v "$command_name" >/dev/null 2>&1; then
       printf '[ok] %s\n' "$command_name"
     else
@@ -53,7 +58,7 @@ doctor() {
     echo "MO OS has $failures missing requirement(s)." >&2
     return 1
   fi
-  echo 'MO OS terminal and virtual-installer foundation is healthy.'
+  echo 'MO OS terminal and UEFI virtual-installer foundation is healthy.'
 }
 
 dev_init() {
