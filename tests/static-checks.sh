@@ -61,11 +61,11 @@ grep -q 'MO_OS_BOOT_READY' config/includes.chroot/usr/local/sbin/mo-boot-ready
 grep -q 'MO_OS_INSTALLED_BOOT_READY' config/includes.chroot/usr/local/sbin/mo-installed-ready
 grep -q 'MO_OS_INSTALL_TOKEN' "$autotest"
 grep -q 'MO_OS_INSTALL_AUTHORIZED' "$autotest"
-grep -q 'MO-INSTALL-VIRTUAL-DISK-V1' "$autotest"
+grep -q 'MO-INSTALL-VDA-01' "$autotest"
 grep -q '/sys/class/block/vda/serial' "$autotest"
 grep -q 'udevadm info --query=property --name=/dev/vda' "$autotest"
 grep -q '/bin/bash /usr/local/sbin/mo-install' "$autotest"
-grep -q 'virtio-blk-pci,drive=mo_install_disk,serial=MO-INSTALL-VIRTUAL-DISK-V1' tests/install-qemu.sh
+grep -q 'virtio-blk-pci,drive=mo_install_disk,serial=MO-INSTALL-VDA-01' tests/install-qemu.sh
 grep -q 'systemd.unit=mo-boot-test.target' build/configure.sh
 grep -q -- '--security false' build/configure.sh
 grep -q 'trixie-security' config/archives/mo-security.list.chroot
