@@ -24,7 +24,7 @@ Usage:
 
 Alpha 0.3 accepts only /dev/vda inside QEMU/KVM. Physical disks, SATA disks,
 NVMe devices and every other target are rejected. Interactive installations
-require a password. CI may create a locked test account with --lock-user.
+require a password. CI creates only a locked test account.
 USAGE
 }
 
@@ -87,6 +87,14 @@ while (($# > 0)); do
   shift
 done
 
+# The existing CI service invokes the installer with the Alpha 0.2 argument set.
+# Preserve that narrow path only for non-interactive QEMU validation.
+if [[ "$non_interactive" -eq 1 && -z "$firmware" && -z "$username" ]]; then
+  firmware=uefi
+  username=mo-test
+  lock_user=1
+fi
+
 [[ ${EUID:-$(id -u)} -eq 0 ]] || fail 'root privileges are required'
 [[ "$virtual_mode" -eq 1 ]] || fail 'the Alpha 0.3 installer requires --virtual'
 [[ "$firmware" == uefi ]] || fail 'Alpha 0.3 requires --firmware uefi'
@@ -98,7 +106,7 @@ done
 [[ "$username" != root ]] || fail 'root cannot be used as the regular account'
 
 if [[ "$non_interactive" -eq 1 ]]; then
-  [[ "$lock_user" -eq 1 ]] || fail 'non-interactive mode requires --lock-user'
+  [[ "$lock_user" -eq 1 ]] || fail 'non-interactive mode requires a locked account'
 else
   [[ "$lock_user" -eq 0 ]] || fail '--lock-user is reserved for non-interactive tests'
 fi
