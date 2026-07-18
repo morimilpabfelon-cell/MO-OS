@@ -1,0 +1,12 @@
+MO OS update trust store
+
+The production public key must be installed as:
+
+  /etc/mo/trust/update-public.pem
+
+No private signing key may be stored in the ISO, repository, installed root,
+CI artifacts, or update bundle. Alpha 0.5 CI generates a temporary key pair,
+uses only its public half for verification, and destroys both when the job ends.
+
+A production key will be enrolled only after offline custody, rotation and
+revocation procedures are defined and tested.
