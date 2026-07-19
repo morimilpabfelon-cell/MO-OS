@@ -12,6 +12,7 @@ worker_host=/usr/local/libexec/mo-arch-worker
 machinectl_cmd=/usr/bin/machinectl
 timeout_cmd=/usr/bin/timeout
 sha256sum_cmd=/usr/bin/sha256sum
+realpath_cmd=/usr/bin/realpath
 
 if [[ ${MO_ARCH_DISPATCH_ALLOW_TEST_MODE:-0} == 1 ]]; then
   machine_root=${MO_ARCH_DISPATCH_MACHINE_ROOT:-$machine_root}
@@ -45,15 +46,40 @@ fi
   echo 'arch_worker_missing' >&2
   exit 1
 }
-for required_command in "$machinectl_cmd" "$timeout_cmd" "$sha256sum_cmd"; do
+for required_command in "$machinectl_cmd" "$timeout_cmd" "$sha256sum_cmd" "$realpath_cmd"; do
   [[ -x "$required_command" ]] || {
     echo "arch_dispatch_dependency_missing:${required_command}" >&2
     exit 1
   }
 done
 
-host_worker_sha="$($sha256sum_cmd "$worker_host" | awk '{print $1}')"
-domain_worker_sha="$($sha256sum_cmd "$machine_root$worker_inside" | awk '{print $1}')"
+resolved_machine_root="$($realpath_cmd -e -- "$machine_root")" || {
+  echo 'arch_machine_root_resolution_failed' >&2
+  exit 1
+}
+resolved_worker_host="$($realpath_cmd -e -- "$worker_host")" || {
+  echo 'arch_authoritative_worker_resolution_failed' >&2
+  exit 1
+}
+resolved_domain_worker="$($realpath_cmd -e -- "$machine_root$worker_inside")" || {
+  echo 'arch_worker_resolution_failed' >&2
+  exit 1
+}
+[[ "$resolved_machine_root" == "$machine_root" ]] || {
+  echo 'arch_machine_root_not_canonical' >&2
+  exit 1
+}
+[[ "$resolved_worker_host" == "$worker_host" ]] || {
+  echo 'arch_authoritative_worker_path_not_canonical' >&2
+  exit 1
+}
+[[ "$resolved_domain_worker" == "$machine_root$worker_inside" ]] || {
+  echo 'arch_worker_path_not_canonical' >&2
+  exit 1
+}
+
+read -r host_worker_sha _ < <("$sha256sum_cmd" "$resolved_worker_host")
+read -r domain_worker_sha _ < <("$sha256sum_cmd" "$resolved_domain_worker")
 [[ "$host_worker_sha" =~ ^[0-9a-f]{64}$ && "$domain_worker_sha" =~ ^[0-9a-f]{64}$ ]] || {
   echo 'arch_worker_digest_invalid' >&2
   exit 1
