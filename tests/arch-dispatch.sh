@@ -42,7 +42,7 @@ export MO_ARCH_DISPATCH_ALLOW_TEST_MODE=1
 export MO_ARCH_DISPATCH_MACHINE_ROOT="$machine_root"
 export MO_ARCH_DISPATCH_MACHINECTL="$fake_machinectl"
 
-status="$($dispatch status)"
+status="$("$dispatch" status)"
 python3 - "$status" <<'PY_STATUS'
 import json
 import sys
