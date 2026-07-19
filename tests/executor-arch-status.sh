@@ -2,7 +2,7 @@
 set -Eeuo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-bodyd="$repo_root/config/includes.chroot/usr/local/sbin/mo-bodyd"
+bodyd="${MO_TEST_BODYD:-$repo_root/config/includes.chroot/usr/local/sbin/mo-bodyd}"
 workdir="$(mktemp -d)"
 trap 'rm -rf "$workdir"' EXIT
 root="$workdir/root"
@@ -37,7 +37,7 @@ export MO_BODYD_ALLOW_TEST_ROOT=1
 export MO_BODYD_ARCH_DISPATCH="$fake_dispatch"
 bodyd_cmd=(python3 "$bodyd")
 
-python3 -m py_compile "$bodyd"
+PYTHONPYCACHEPREFIX="$workdir/pycache" python3 -m py_compile "$bodyd"
 "${bodyd_cmd[@]}" --root "$root" init >/dev/null
 openssl genpkey -algorithm ED25519 -out "$workdir/controller-private.pem" >/dev/null 2>&1
 openssl pkey -in "$workdir/controller-private.pem" -pubout \
@@ -124,6 +124,7 @@ receipt = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
 assert receipt["status"] == "rejected", receipt
 assert receipt["error"] == "arch_status_parameters_must_be_empty", receipt
 PY_PARAMETERS
+[[ ! -e "$root/var/lib/mo-bodyd/accepted/arch-parameters" ]]
 
 export MO_TEST_ARCH_MODE=wrong-domain
 wrong_domain="$workdir/arch-wrong-domain"
@@ -134,9 +135,24 @@ import json
 import pathlib
 import sys
 receipt = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
-assert receipt["status"] == "rejected", receipt
+assert receipt["status"] == "failed", receipt
 assert receipt["error"] == "arch_status_domain_invalid", receipt
 PY_WRONG
+[[ -e "$root/var/lib/mo-bodyd/accepted/arch-wrong-domain" ]]
 unset MO_TEST_ARCH_MODE
 
-printf '%s\n' 'Signed arch.status passed Debian governance and Arch evidence validation.'
+export MO_TEST_ARCH_MODE=malformed
+malformed="$workdir/arch-malformed"
+make_request "$malformed" arch-malformed '{}'
+malformed_receipt="$("${bodyd_cmd[@]}" --root "$root" process --bundle "$malformed")"
+python3 - "$malformed_receipt/receipt.json" <<'PY_MALFORMED'
+import json
+import pathlib
+import sys
+receipt = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+assert receipt["status"] == "failed", receipt
+assert receipt["error"] == "arch_dispatch_output_invalid", receipt
+PY_MALFORMED
+unset MO_TEST_ARCH_MODE
+
+printf '%s\n' 'Signed arch.status passed Debian policy, failure semantics and Arch evidence validation.'
