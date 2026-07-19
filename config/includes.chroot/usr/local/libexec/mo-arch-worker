@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+readonly action=${1:-}
+
+if [[ $# -ne 1 ]]; then
+  echo 'Usage: mo-arch-worker status' >&2
+  exit 2
+fi
+
+case "$action" in
+  status)
+    exec python3 - <<'PY_STATUS'
+import json
+import pathlib
+import platform
+
+
+def read_os_release() -> dict[str, str]:
+    result: dict[str, str] = {}
+    path = pathlib.Path("/etc/os-release")
+    if not path.is_file():
+        raise SystemExit("arch_os_release_missing")
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        if not raw_line or raw_line.startswith("#") or "=" not in raw_line:
+            continue
+        key, value = raw_line.split("=", 1)
+        result[key] = value.strip().strip('"')
+    if result.get("ID") != "arch":
+        raise SystemExit("arch_identity_mismatch")
+    return {
+        "ID": result["ID"],
+        "NAME": result.get("NAME", "Arch Linux"),
+        "VERSION_ID": result.get("VERSION_ID", "rolling"),
+    }
+
+
+status = {
+    "schema_version": "mo.arch.worker.status.v0.1",
+    "domain": "arch",
+    "kernel_release": platform.release(),
+    "machine": platform.machine(),
+    "os_release": read_os_release(),
+}
+print(json.dumps(status, ensure_ascii=False, sort_keys=True, separators=(",", ":")))
+PY_STATUS
+    ;;
+  *)
+    echo 'arch_worker_operation_not_allowed' >&2
+    exit 2
+    ;;
+esac
