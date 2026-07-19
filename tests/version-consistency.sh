@@ -51,6 +51,9 @@ require_fixed 'Checksum file must contain exactly one line.' build/verify-iso.sh
 require_fixed 'MO_OS_ALPHA_06' build/verify-iso.sh
 require_fixed 'MO OS Alpha 0.6 Morimil Executor' build/verify-iso.sh
 require_fixed 'MO OS Project' build/verify-iso.sh
+require_fixed 'actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5' .github/workflows/boot-candidate.yml
+require_fixed 'actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5' .github/workflows/foundation-validation.yml
+require_fixed 'actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02' .github/workflows/boot-candidate.yml
 require_fixed 'mo_version="$(<"$repo_root/VERSION")"' tests/boot-qemu.sh
 require_fixed 'mo_version="$(<"$repo_root/VERSION")"' tests/secure-boot-qemu.sh
 require_fixed 'mo_version="$(<"$repo_root/VERSION")"' tests/install-qemu.sh
@@ -68,6 +71,10 @@ if grep -R -nE \
   '(Alpha 0\.(2|4|5)|mo-os-alpha-0\.(2|4|5)|0\.4\.0-alpha\.1|0\.5\.0-alpha\.2)' \
   Makefile build tests config/includes.chroot .github/workflows; then
   fail 'stale operational Alpha version references remain'
+fi
+
+if grep -R -nE '^[[:space:]]*uses:[[:space:]]+[^[:space:]]+@v[0-9]+' .github/workflows; then
+  fail 'GitHub Actions must be pinned to immutable commit SHAs'
 fi
 
 if find config/includes.chroot -type f \( -name '*.pyc' -o -name '*.pyo' \) -print -quit | grep -q .; then
