@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""MO OS executor controlled by one paired Morimil Android Body."""
+"""MO OS native executor controlled by one paired external Morimil authority."""
 
 from __future__ import annotations
 
@@ -359,71 +359,73 @@ def validate_request(
     if request["schema_version"] != SCHEMA_REQUEST:
         raise BodydError("request_schema_unsupported")
     request_id = validate_id(request["request_id"], "request_id")
-    instance_id = validate_id(request["instance_id"], "instance_id")
-    controller_body_id = validate_id(request["controller_body_id"], "controller_body_id")
-    target_executor_id = validate_id(request["target_executor_id"], "target_executor_id")
-    operation = validate_id(request["operation"], "operation")
+    validate_id(request["instance_id"], "instance_id")
+    validate_id(request["controller_body_id"], "controller_body_id")
+    validate_id(request["target_executor_id"], "target_executor_id")
+    validate_id(request["operation"], "operation")
+    if request["instance_id"] != pairing["instance_id"]:
+        raise BodydError("instance_mismatch")
+    if request["controller_body_id"] != pairing["controller_body_id"]:
+        raise BodydError("controller_mismatch")
+    if request["target_executor_id"] != identity["executor_id"]:
+        raise BodydError("executor_target_mismatch")
+    if request["operation"] not in SUPPORTED_OPERATIONS:
+        raise BodydError("operation_not_allowed")
     if not isinstance(request["nonce"], str) or not NONCE_PATTERN.fullmatch(request["nonce"]):
         raise BodydError("nonce_invalid")
     if not isinstance(request["parameters"], dict):
         raise BodydError("parameters_object_required")
-    if instance_id != pairing.get("instance_id"):
-        raise BodydError("instance_not_authorized")
-    if controller_body_id != pairing.get("controller_body_id"):
-        raise BodydError("controller_body_not_authorized")
-    if target_executor_id != identity.get("executor_id"):
-        raise BodydError("executor_target_mismatch")
-    if operation not in SUPPORTED_OPERATIONS:
-        raise BodydError("operation_not_allowed")
-    if operation == "system.status" and request["parameters"]:
-        raise BodydError("system_status_parameters_not_allowed")
 
     issued_at = parse_time(request["issued_at"], "issued_at")
     expires_at = parse_time(request["expires_at"], "expires_at")
     now = utc_now()
-    validity = (expires_at - issued_at).total_seconds()
-    if validity <= 0 or validity > MAX_VALIDITY_SECONDS:
+    if expires_at <= issued_at or (expires_at - issued_at).total_seconds() > MAX_VALIDITY_SECONDS:
         raise BodydError("request_validity_window_invalid")
     if issued_at > now + dt.timedelta(seconds=MAX_FUTURE_SKEW_SECONDS):
         raise BodydError("request_issued_in_future")
-    if now > expires_at:
+    if expires_at < now:
         raise BodydError("request_expired")
 
-    replay_marker = layout.accepted_dir / request_id
+    accepted_marker = layout.accepted_dir / request_id
     try:
-        fd = os.open(replay_marker, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        descriptor = os.open(accepted_marker, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     except FileExistsError as exc:
         raise BodydError("request_replay_rejected") from exc
-    with os.fdopen(fd, "w", encoding="utf-8") as marker:
-        marker.write(hashlib.sha256(raw).hexdigest() + "\n")
-        marker.flush()
-        os.fsync(marker.fileno())
+    with os.fdopen(descriptor, "w", encoding="utf-8") as output:
+        output.write(hashlib.sha256(raw).hexdigest() + "\n")
+        output.flush()
+        os.fsync(output.fileno())
     return request, raw
 
 
 def operation_system_status(layout: Layout) -> dict[str, Any]:
-    release: dict[str, str] = {}
+    release = {}
     release_file = layout.root / "etc/mo-release"
     if release_file.is_file():
         for line in release_file.read_text(encoding="utf-8").splitlines():
             if "=" in line:
                 key, value = line.split("=", 1)
-                release[key] = value.strip().strip('"')
+                release[key] = value.strip('"')
     arch_domain = layout.root / "var/lib/machines/mo-dev"
     return {
         "mo_release": release,
-        "kernel": os.uname().release,
-        "machine": os.uname().machine,
         "arch_domain_initialized": arch_domain.is_dir(),
         "supported_operations": sorted(SUPPORTED_OPERATIONS),
     }
 
 
-def sign_receipt(layout: Layout, receipt_bytes: bytes) -> str:
-    with tempfile.NamedTemporaryFile(prefix="mo-bodyd-receipt-", delete=True) as payload_file:
-        payload_file.write(receipt_bytes)
-        payload_file.flush()
-        signature = run_checked([
+def execute_operation(layout: Layout, request: dict[str, Any]) -> dict[str, Any]:
+    operation = request["operation"]
+    if operation == "system.status":
+        if request["parameters"]:
+            raise BodydError("system_status_parameters_must_be_empty")
+        return operation_system_status(layout)
+    raise BodydError("operation_not_allowed")
+
+
+def sign_receipt(layout: Layout, receipt_path: pathlib.Path, signature_path: pathlib.Path) -> None:
+    with tempfile.NamedTemporaryFile(prefix="mo-bodyd-receipt-", delete=True) as signature_file:
+        run_checked([
             "openssl",
             "pkeyutl",
             "-sign",
@@ -431,130 +433,195 @@ def sign_receipt(layout: Layout, receipt_bytes: bytes) -> str:
             str(layout.private_key),
             "-rawin",
             "-in",
-            payload_file.name,
-        ]).stdout
+            str(receipt_path),
+            "-out",
+            signature_file.name,
+        ])
+        signature_file.seek(0)
+        signature = signature_file.read()
     if len(signature) != 64:
         raise BodydError("receipt_signature_length_invalid")
-    return base64.b64encode(signature).decode("ascii") + "\n"
+    atomic_write(signature_path, base64.b64encode(signature) + b"\n", 0o600)
+
+
+def write_receipt(
+    layout: Layout,
+    identity: dict[str, Any],
+    request_id: str,
+    request_digest: str | None,
+    operation: str | None,
+    started_at: str,
+    status: str,
+    output: dict[str, Any] | None,
+    error: str | None,
+) -> pathlib.Path:
+    receipt_dir = layout.outbox_dir / request_id
+    if receipt_dir.exists():
+        raise BodydError("receipt_already_exists")
+    receipt_dir.mkdir(parents=True, mode=0o700)
+    receipt = {
+        "schema_version": SCHEMA_RECEIPT,
+        "request_id": request_id,
+        "request_sha256": request_digest,
+        "executor_id": identity.get("executor_id"),
+        "operation": operation,
+        "status": status,
+        "started_at": started_at,
+        "completed_at": format_time(utc_now()),
+        "output": output,
+        "error": error,
+    }
+    receipt_path = receipt_dir / "receipt.json"
+    signature_path = receipt_dir / "receipt.sig"
+    atomic_write(receipt_path, canonical_json(receipt), 0o600)
+    sign_receipt(layout, receipt_path, signature_path)
+    return receipt_dir
+
+
+def safe_bundle_id(bundle: pathlib.Path) -> str:
+    if not bundle.name or not ID_PATTERN.fullmatch(bundle.name):
+        return "bundle-" + hashlib.sha256(str(bundle).encode("utf-8")).hexdigest()[:24]
+    return bundle.name
 
 
 def process_bundle(layout: Layout, bundle: pathlib.Path) -> pathlib.Path:
     require_root(layout.root)
     layout.ensure_state_dirs()
     identity, pairing = load_ready_state(layout)
-    started_at = utc_now()
-    request_id = bundle.name
-    operation = "unknown"
-    request_digest = "unknown"
+    started_at = format_time(utc_now())
+    request_id = safe_bundle_id(bundle)
+    request_digest: str | None = None
+    operation: str | None = None
     try:
         request, raw = validate_request(layout, bundle, pairing, identity)
         request_id = request["request_id"]
-        operation = request["operation"]
         request_digest = "sha256:" + hashlib.sha256(raw).hexdigest()
-        if operation == "system.status":
-            output = operation_system_status(layout)
-        else:
-            raise BodydError("operation_not_implemented")
-        receipt_status = "completed"
-        error = None
+        operation = request["operation"]
+        output = execute_operation(layout, request)
+        receipt_dir = write_receipt(
+            layout,
+            identity,
+            request_id,
+            request_digest,
+            operation,
+            started_at,
+            "completed",
+            output,
+            None,
+        )
+        append_journal(
+            layout,
+            {
+                "event": "request_completed",
+                "request_id": request_id,
+                "request_sha256": request_digest,
+                "operation": operation,
+            },
+        )
+        return receipt_dir
     except BodydError as exc:
-        output = None
-        receipt_status = "rejected"
         error = str(exc)
-
-    completed_at = utc_now()
-    receipt: dict[str, Any] = {
-        "schema_version": SCHEMA_RECEIPT,
-        "request_id": request_id,
-        "executor_id": identity["executor_id"],
-        "operation": operation,
-        "status": receipt_status,
-        "request_sha256": request_digest,
-        "started_at": format_time(started_at),
-        "completed_at": format_time(completed_at),
-        "output": output,
-        "error": error,
-    }
-    receipt_bytes = canonical_json(receipt)
-    safe_request_id = request_id if ID_PATTERN.fullmatch(request_id) else hashlib.sha256(bundle.name.encode()).hexdigest()
-    receipt_dir = layout.outbox_dir / safe_request_id
-    if receipt_dir.exists():
-        raise BodydError("receipt_already_exists")
-    receipt_dir.mkdir(parents=False, mode=0o700)
-    atomic_write(receipt_dir / "receipt.json", receipt_bytes, 0o600)
-    atomic_write(receipt_dir / "receipt.sig", sign_receipt(layout, receipt_bytes).encode("ascii"), 0o600)
-    append_journal(
-        layout,
-        {
-            "event": "request_processed",
-            "request_id": request_id,
-            "operation": operation,
-            "status": receipt_status,
-            "request_sha256": request_digest,
-        },
-    )
-    print(str(receipt_dir))
-    return receipt_dir
+        if request_id == safe_bundle_id(bundle):
+            failed_marker = layout.failed_dir / request_id
+            atomic_write(failed_marker, (error + "\n").encode("utf-8"), 0o600)
+        receipt_dir = write_receipt(
+            layout,
+            identity,
+            request_id,
+            request_digest,
+            operation,
+            started_at,
+            "rejected",
+            None,
+            error,
+        )
+        append_journal(
+            layout,
+            {
+                "event": "request_rejected",
+                "request_id": request_id,
+                "request_sha256": request_digest,
+                "operation": operation,
+                "error": error,
+            },
+        )
+        return receipt_dir
 
 
-def serve(layout: Layout, interval: float) -> None:
+def process_inbox(layout: Layout, poll_seconds: float) -> None:
     require_root(layout.root)
     layout.ensure_state_dirs()
     load_ready_state(layout)
     while True:
-        bundles = sorted(path for path in layout.inbox_dir.iterdir() if path.is_dir())
-        for bundle in bundles:
+        candidates = sorted(path for path in layout.inbox_dir.iterdir() if path.is_dir())
+        for bundle in candidates:
             try:
-                process_bundle(layout, bundle)
-                shutil.rmtree(bundle)
-            except BodydError as exc:
-                destination = layout.failed_dir / (bundle.name + ".failed")
+                receipt_dir = process_bundle(layout, bundle)
+                destination = layout.state_dir / "processed" / bundle.name
+                destination.parent.mkdir(parents=True, exist_ok=True)
                 if destination.exists():
-                    shutil.rmtree(destination)
+                    raise BodydError("processed_bundle_destination_exists")
                 shutil.move(str(bundle), str(destination))
-                append_journal(layout, {"event": "bundle_failure", "bundle": bundle.name, "error": str(exc)})
-        time.sleep(interval)
+                print(str(receipt_dir), flush=True)
+            except BodydError as exc:
+                append_journal(
+                    layout,
+                    {
+                        "event": "bundle_processing_failed",
+                        "bundle": bundle.name,
+                        "error": str(exc),
+                    },
+                )
+        time.sleep(poll_seconds)
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="MO OS Morimil-controlled executor")
+    parser = argparse.ArgumentParser(description="MO OS Morimil executor")
     parser.add_argument("--root", default="/", help=argparse.SUPPRESS)
     subparsers = parser.add_subparsers(dest="command", required=True)
-    subparsers.add_parser("init", help="initialize the executor receipt-signing identity")
-    pair = subparsers.add_parser("pair", help="pair exactly one Morimil controller Body")
+
+    subparsers.add_parser("init", help="Initialize the executor receipt-signing identity")
+
+    pair = subparsers.add_parser("pair", help="Pair one Morimil controller")
     pair.add_argument("--controller-key", required=True, type=pathlib.Path)
     pair.add_argument("--instance-id", required=True)
     pair.add_argument("--controller-body-id", required=True)
-    subparsers.add_parser("status", help="show executor readiness")
-    process = subparsers.add_parser("process", help="process one signed request bundle")
+
+    subparsers.add_parser("status", help="Show executor identity and pairing status")
+
+    process = subparsers.add_parser("process", help="Process one signed request bundle")
     process.add_argument("--bundle", required=True, type=pathlib.Path)
-    serve_parser = subparsers.add_parser("serve", help="watch the signed request inbox")
-    serve_parser.add_argument("--interval", type=float, default=1.0)
+
+    serve = subparsers.add_parser("serve", help="Process signed bundles from the inbox")
+    serve.add_argument("--poll-seconds", type=float, default=1.0)
     return parser
 
 
 def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
+    layout = Layout(resolve_root(args.root))
     try:
-        root = resolve_root(args.root)
-        layout = Layout(root)
         if args.command == "init":
             init_identity(layout)
         elif args.command == "pair":
-            pair_controller(layout, args.controller_key.resolve(), args.instance_id, args.controller_body_id)
+            pair_controller(
+                layout,
+                args.controller_key,
+                args.instance_id,
+                args.controller_body_id,
+            )
         elif args.command == "status":
             show_status(layout)
         elif args.command == "process":
-            process_bundle(layout, args.bundle.resolve())
+            receipt_dir = process_bundle(layout, args.bundle.resolve())
+            print(receipt_dir)
         elif args.command == "serve":
-            if args.interval < 0.1 or args.interval > 60:
-                raise BodydError("serve_interval_out_of_range")
-            serve(layout, args.interval)
+            process_inbox(layout, args.poll_seconds)
         else:
-            parser.error("unknown command")
+            raise BodydError("command_not_supported")
     except BodydError as exc:
-        print(f"mo-bodyd: {exc}", file=sys.stderr)
+        print(str(exc), file=sys.stderr)
         return 1
     return 0
 
