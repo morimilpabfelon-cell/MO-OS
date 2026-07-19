@@ -1,4 +1,4 @@
-name: MO OS Secure Boot Candidate
+name: MO OS Morimil Executor Candidate
 
 on:
   push:
@@ -14,9 +14,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build-boot-secure-install-recover-update:
+  build-boot-secure-install-recover-update-executor:
     runs-on: ubuntu-latest
-    timeout-minutes: 175
+    timeout-minutes: 180
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -38,6 +38,12 @@ jobs:
           status=${PIPESTATUS[0]}
           set -e
           exit "$status"
+
+      - name: Verify Morimil executor authority boundary
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          make executor-test 2>&1 | tee diagnostics/executor-signature-test.log
 
       - name: Verify signed update trust chain
         shell: bash
@@ -107,15 +113,15 @@ jobs:
         run: |
           set -Eeuo pipefail
           ls -lh artifacts | tee diagnostics/artifact-info.txt
-          sha256sum artifacts/mo-os-alpha-0.5-amd64.iso | tee -a diagnostics/artifact-info.txt
+          sha256sum artifacts/mo-os-alpha-0.6-amd64.iso | tee -a diagnostics/artifact-info.txt
 
       - name: Publish system candidate
         uses: actions/upload-artifact@v4
         with:
-          name: mo-os-alpha-0.5-amd64
+          name: mo-os-alpha-0.6-amd64
           path: |
-            artifacts/mo-os-alpha-0.5-amd64.iso
-            artifacts/mo-os-alpha-0.5-amd64.iso.sha256
+            artifacts/mo-os-alpha-0.6-amd64.iso
+            artifacts/mo-os-alpha-0.6-amd64.iso.sha256
           if-no-files-found: error
           retention-days: 7
           compression-level: 0
@@ -124,7 +130,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: mo-os-alpha-0.5-secure-boot-diagnostics
+          name: mo-os-alpha-0.6-morimil-executor-diagnostics
           path: diagnostics/
           if-no-files-found: warn
           retention-days: 7
