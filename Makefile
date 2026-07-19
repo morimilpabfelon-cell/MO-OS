@@ -1,4 +1,4 @@
-.PHONY: help check configure iso verify boot-test secure-boot-test install-test update-test executor-test run clean
+.PHONY: help check configure iso verify boot-test secure-boot-test install-test update-test executor-test arch-dispatch-test run clean
 
 SHELL := /bin/bash
 ISO := artifacts/mo-os-alpha-0.6-amd64.iso
@@ -6,17 +6,18 @@ ISO := artifacts/mo-os-alpha-0.6-amd64.iso
 help:
 	@printf '%s\n' \
 	  'MO OS build commands' \
-	  '  make check             Static validation' \
-	  '  make configure         Generate live-build state' \
-	  '  sudo make iso          Build the bootable ISO' \
-	  '  make verify            Inspect and hash the ISO' \
-	  '  make boot-test         Verify terminal boot in QEMU' \
-	  '  make secure-boot-test  Boot a signed UKI and reject unsigned or modified UKIs' \
-	  '  make install-test      Install, unlock, mutate, roll back and reboot a disposable QEMU disk' \
-	  '  sudo make update-test  Verify signatures, snapshots, tamper rejection and anti-replay' \
-	  '  make executor-test     Verify Morimil authority, signatures, replay rejection and receipts' \
-	  '  make run               Boot the ISO interactively' \
-	  '  sudo make clean        Remove live-build output'
+	  '  make check               Static validation' \
+	  '  make configure           Generate live-build state' \
+	  '  sudo make iso            Build the bootable ISO' \
+	  '  make verify              Inspect and hash the ISO' \
+	  '  make boot-test           Verify terminal boot in QEMU' \
+	  '  make secure-boot-test    Boot a signed UKI and reject unsigned or modified UKIs' \
+	  '  make install-test        Install, unlock, mutate, roll back and reboot a disposable QEMU disk' \
+	  '  sudo make update-test    Verify signatures, snapshots, tamper rejection and anti-replay' \
+	  '  make executor-test       Verify Morimil authority, signatures, replay rejection and receipts' \
+	  '  make arch-dispatch-test  Verify Debian governance over the fixed Arch worker' \
+	  '  make run                 Boot the ISO interactively' \
+	  '  sudo make clean          Remove live-build output'
 
 check:
 	@bash tests/static-checks.sh
@@ -44,6 +45,9 @@ update-test:
 
 executor-test:
 	@bash tests/executor-signature.sh
+
+arch-dispatch-test:
+	@bash tests/arch-dispatch.sh
 
 run:
 	@test -f "$(ISO)" || { echo "Missing $(ISO). Build it first." >&2; exit 1; }
