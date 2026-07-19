@@ -74,6 +74,18 @@ fi
 grep -Fq 'arch_worker_integrity_mismatch' "$workdir/tamper.err"
 install -m0755 "$worker" "$machine_root/usr/local/libexec/mo-arch-worker"
 
+mkdir -p "$workdir/escaped-worker"
+install -m0755 "$worker" "$workdir/escaped-worker/mo-arch-worker"
+mv "$machine_root/usr/local/libexec" "$machine_root/usr/local/libexec.real"
+ln -s "$workdir/escaped-worker" "$machine_root/usr/local/libexec"
+if bash "$dispatch" status >"$workdir/path.out" 2>"$workdir/path.err"; then
+  echo 'Debian dispatcher accepted a worker through an intermediate symlink.' >&2
+  exit 1
+fi
+grep -Fq 'arch_worker_path_not_canonical' "$workdir/path.err"
+rm "$machine_root/usr/local/libexec"
+mv "$machine_root/usr/local/libexec.real" "$machine_root/usr/local/libexec"
+
 rm -rf "$machine_root"
 if bash "$dispatch" status >/dev/null 2>&1; then
   echo 'Debian dispatcher accepted a missing Arch domain.' >&2
@@ -86,4 +98,4 @@ if command -v shellcheck >/dev/null 2>&1; then
   shellcheck "$dispatch" "$worker" "$0"
 fi
 
-printf '%s\n' 'Debian governance, worker integrity and fixed Arch status execution tests passed.'
+printf '%s\n' 'Debian governance, canonical paths, worker integrity and fixed Arch status execution tests passed.'
