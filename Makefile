@@ -14,7 +14,7 @@ help:
 	  '  make secure-boot-test    Boot a signed UKI and reject unsigned or modified UKIs' \
 	  '  make install-test        Install, unlock, mutate, roll back and reboot a disposable QEMU disk' \
 	  '  sudo make update-test    Verify signatures, snapshots, tamper rejection and anti-replay' \
-	  '  make executor-test       Verify Morimil authority, signatures, replay rejection and receipts' \
+	  '  make executor-test       Verify Morimil authority and signed Debian-to-Arch status' \
 	  '  make arch-dispatch-test  Verify Debian governance over the fixed Arch worker' \
 	  '  make run                 Boot the ISO interactively' \
 	  '  sudo make clean          Remove live-build output'
@@ -45,6 +45,7 @@ update-test:
 
 executor-test:
 	@bash tests/executor-signature.sh
+	@bash tests/executor-arch-status.sh
 
 arch-dispatch-test:
 	@bash tests/arch-dispatch.sh
