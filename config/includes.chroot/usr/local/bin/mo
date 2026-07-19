@@ -70,7 +70,7 @@ doctor() {
   for command_name in \
     bash blkid blockdev btrfs chroot cryptsetup curl findmnt git grub-install \
     lsblk machinectl mkfs.btrfs mkfs.ext4 mkfs.vfat mount openssl parted python3 \
-    rsync sha256sum systemctl systemd-nspawn tar update-grub wipefs zstd; do
+    rsync sha256sum systemctl systemd-nspawn tar timeout update-grub wipefs zstd; do
     if command -v "$command_name" >/dev/null 2>&1; then
       printf '[ok] %s\n' "$command_name"
     else
@@ -78,10 +78,23 @@ doctor() {
       failures=$((failures + 1))
     fi
   done
-  [[ -r "$release_file" ]] || { echo '[missing] /etc/mo-release' >&2; failures=$((failures + 1)); }
-  for helper in mo-bodyd mo-install mo-recovery mo-snapshot mo-update; do
-    [[ -r "/usr/local/sbin/$helper" ]] || {
-      echo "[missing] $helper" >&2
+  [[ -r "$release_file" ]] || {
+    echo '[missing] /etc/mo-release' >&2
+    failures=$((failures + 1))
+  }
+  for helper in mo-install mo-recovery mo-snapshot mo-update mo-dev-init; do
+    [[ -x "/usr/local/sbin/$helper" ]] || {
+      echo "[missing or not executable] $helper" >&2
+      failures=$((failures + 1))
+    }
+  done
+  [[ -r /usr/local/sbin/mo-bodyd ]] || {
+    echo '[missing] mo-bodyd' >&2
+    failures=$((failures + 1))
+  }
+  for native_helper in mo-arch-dispatch mo-arch-worker; do
+    [[ -x "/usr/local/libexec/$native_helper" ]] || {
+      echo "[missing or not executable] $native_helper" >&2
       failures=$((failures + 1))
     }
   done
