@@ -42,7 +42,7 @@ export MO_ARCH_DISPATCH_ALLOW_TEST_MODE=1
 export MO_ARCH_DISPATCH_MACHINE_ROOT="$machine_root"
 export MO_ARCH_DISPATCH_MACHINECTL="$fake_machinectl"
 
-status="$("$dispatch" status)"
+status="$(bash "$dispatch" status)"
 python3 - "$status" <<'PY_STATUS'
 import json
 import sys
@@ -52,21 +52,21 @@ assert status["domain"] == "arch"
 assert status["os_release"]["ID"] == "arch"
 PY_STATUS
 
-if "$dispatch" shell.execute >/dev/null 2>&1; then
+if bash "$dispatch" shell.execute >/dev/null 2>&1; then
   echo 'Debian dispatcher accepted an arbitrary operation.' >&2
   exit 1
 fi
 
 FAKE_MACHINECTL_MODE=malformed
 export FAKE_MACHINECTL_MODE
-if "$dispatch" status >/dev/null 2>&1; then
+if bash "$dispatch" status >/dev/null 2>&1; then
   echo 'Debian dispatcher accepted malformed Arch evidence.' >&2
   exit 1
 fi
 unset FAKE_MACHINECTL_MODE
 
 rm -rf "$machine_root"
-if "$dispatch" status >/dev/null 2>&1; then
+if bash "$dispatch" status >/dev/null 2>&1; then
   echo 'Debian dispatcher accepted a missing Arch domain.' >&2
   exit 1
 fi
