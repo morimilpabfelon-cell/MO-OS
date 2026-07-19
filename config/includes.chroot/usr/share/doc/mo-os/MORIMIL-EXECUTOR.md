@@ -1,13 +1,15 @@
 # MO OS Morimil Executor Foundation
 
-MO OS is Morimil's native work system. Alpha `0.6.0-alpha.1` introduces `mo-bodyd`, a subordinate executor controlled exclusively by the paired Morimil Android Body.
+MO OS is Morimil's native work system and remains a pure Debian and Arch Linux hybrid. Alpha `0.6.0-alpha.1` introduces `mo-bodyd`, a subordinate Linux-native executor controlled by one paired external Morimil authority.
+
+Morimil-app may currently provide that authority, but Android remains outside MO OS. The ISO contains no Android runtime, SDK, APK or mobile application dependency.
 
 The executor:
 
 - creates a local Ed25519 identity used only to sign receipts;
-- pairs exactly one Morimil Instance and Android controller Body;
+- pairs exactly one Morimil Instance and one controller identity;
 - accepts canonical Ed25519-signed requests;
-- verifies the Instance, controller Body, executor target and validity window;
+- verifies the Instance, controller, executor target and validity window;
 - rejects replayed request identifiers;
 - permits only explicitly allowlisted operations;
 - writes signed receipts and a local append-only audit journal.
@@ -21,7 +23,7 @@ sudo mo executor init
 sudo mo executor pair \
   --controller-key morimil-controller-public.pem \
   --instance-id INSTANCE_ID \
-  --controller-body-id BODY_ID
+  --controller-body-id CONTROLLER_ID
 ```
 
 Inspect status:
