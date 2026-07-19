@@ -45,6 +45,12 @@ jobs:
           set -Eeuo pipefail
           make executor-test 2>&1 | tee diagnostics/executor-signature-test.log
 
+      - name: Verify Debian-governed Arch execution boundary
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          make arch-dispatch-test 2>&1 | tee diagnostics/debian-arch-dispatch-test.log
+
       - name: Verify signed update trust chain
         shell: bash
         run: |
