@@ -68,7 +68,7 @@ require_fixed 'exec sudo /usr/bin/python3 /usr/local/sbin/mo-bodyd status' confi
 if grep -R -nE \
   --exclude=version-consistency.sh \
   --exclude=static-checks.sh \
-  '(Alpha 0\.(2|4|5)|mo-os-alpha-0\.(2|4|5)|0\.4\.0-alpha\.1|0\.5\.0-alpha\.2)' \
+  '(Alpha 0\.[0-5]([^0-9]|$)|mo-os-alpha-0\.[0-5]([^0-9]|$)|(^|[^0-9])0\.[0-5]\.[0-9]+-alpha\.[0-9]+([^0-9]|$))' \
   Makefile build tests config/includes.chroot .github/workflows; then
   fail 'stale operational Alpha version references remain'
 fi
