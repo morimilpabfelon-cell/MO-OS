@@ -2,23 +2,40 @@
 
 ## Purpose
 
-MO OS is Morimil's native work system. In Alpha `0.6.0-alpha.1`, the Android Body remains the exclusive controller and canonical-memory authority. MO OS begins as a subordinate executor that accepts only explicitly signed work requests and returns signed evidence.
+MO OS is Morimil's native work system. It remains a pure Debian and Arch Linux hybrid. In Alpha `0.6.0-alpha.1`, Morimil remains the exclusive controller and canonical-memory authority while MO OS begins as a subordinate native executor that accepts only explicitly signed work requests and returns signed evidence.
+
+The controller is external to MO OS. Morimil-app may act as the current controller, but no Android runtime, Android SDK, APK, mobile database or application component is installed in Debian or Arch.
 
 ```text
-Morimil Android Body
+External Morimil authority
   exclusive request authority
         |
         | canonical Ed25519-signed request
         v
-MO OS / mo-bodyd
+MO OS / Debian / mo-bodyd
   validates identity, target, time and replay state
         |
         | allowlisted operation only
+        v
+Arch Linux domain when explicitly authorized
+        |
         v
 signed execution receipt
 ```
 
 This phase does not make MO OS an `active_writer` for canonical Genesis memory. The executor key may sign receipts only. It cannot grant itself authority, change Morimil identity or write canonical memory.
+
+## Native-system boundary
+
+MO OS contains only Linux-native system components:
+
+1. Debian owns boot, kernel, hardware, security, storage, networking and recovery.
+2. Arch Linux provides a subordinate work domain through `systemd-nspawn`.
+3. The MO layer coordinates policies and execution between the two Linux domains.
+4. External clients communicate through signed files or a future neutral transport.
+5. Client technology never becomes part of the MO OS root filesystem merely because it controls requests.
+
+The request contract describes authority and evidence. It is not an Android integration layer.
 
 ## Initial trust boundary
 
@@ -26,8 +43,8 @@ This phase does not make MO OS an `active_writer` for canonical Genesis memory. 
 
 1. a locally initialized executor receipt-signing identity;
 2. exactly one paired Morimil Instance;
-3. exactly one paired Android controller Body;
-4. the controller Body's Ed25519 public key;
+3. exactly one registered controller identity;
+4. the controller's Ed25519 public key;
 5. a canonical request JSON document;
 6. a valid Ed25519 signature from the paired controller;
 7. an exact executor target;
@@ -61,16 +78,18 @@ The private key is mode `0600`. The public-key fingerprint derives the executor 
 
 ## Controller pairing
 
-Pair one Morimil Android Body:
+Pair one authorized Morimil controller:
 
 ```bash
 sudo mo executor pair \
   --controller-key morimil-controller-public.pem \
   --instance-id INSTANCE_ID \
-  --controller-body-id BODY_ID
+  --controller-body-id CONTROLLER_ID
 ```
 
-Pairing is fail-closed and one-time in this phase. It stores only the controller public key and the exact Instance and Body identifiers. A second controller cannot silently replace the first one.
+`controller_body_id` is a protocol identifier retained for compatibility with Morimil's Body model. It does not imply that Android is installed in MO OS or that the executor depends on a mobile runtime.
+
+Pairing is fail-closed and one-time in this phase. It stores only the controller public key and the exact Instance and controller identifiers. A second controller cannot silently replace the first one.
 
 After successful pairing, the command enables and starts `mo-bodyd.service`.
 
@@ -124,7 +143,7 @@ Every processed request produces:
 
 The receipt includes the request digest, executor identifier, operation, status, timestamps, output or rejection reason. It is signed by the executor's receipt-only Ed25519 key.
 
-Morimil-app must verify the executor identity and receipt signature before trusting the result. A valid receipt proves which executor processed which exact request; it does not grant the executor new authority.
+The controlling Morimil component must verify the executor identity and receipt signature before trusting the result. A valid receipt proves which executor processed which exact request; it does not grant the executor new authority.
 
 ## Audit state
 
@@ -171,7 +190,7 @@ The test generates temporary Ed25519 identities and verifies:
 
 Alpha `0.6.0-alpha.1` does not yet provide:
 
-- Android transport or pairing UI;
+- a network transport or controller UI;
 - network communication;
 - Arch execution sessions;
 - arbitrary commands;
@@ -182,4 +201,4 @@ Alpha `0.6.0-alpha.1` does not yet provide:
 - canonical-memory writes;
 - transfer of `active_writer` authority.
 
-Those capabilities must be added individually, each with a narrow signed contract, resource limits, negative tests and a signed receipt.
+Those capabilities must be added individually, each with a narrow signed contract, resource limits, negative tests and a signed receipt. Any Android-side implementation remains in Morimil-app and never becomes an MO OS package or system dependency.
