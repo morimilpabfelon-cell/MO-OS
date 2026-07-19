@@ -1,7 +1,16 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-iso_path="${1:-artifacts/mo-os-alpha-0.5-amd64.iso}"
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+mo_version="$(<"$repo_root/VERSION")"
+version_core=${mo_version%%-*}
+IFS=. read -r version_major version_minor version_patch version_extra <<< "$version_core"
+[[ "$version_major" =~ ^[0-9]+$ && "$version_minor" =~ ^[0-9]+$ && "$version_patch" =~ ^[0-9]+$ && -z "$version_extra" ]] || {
+  echo "Invalid MO OS VERSION: $mo_version" >&2
+  exit 1
+}
+major_minor="${version_major}.${version_minor}"
+iso_path="${1:-$repo_root/artifacts/mo-os-alpha-${major_minor}-amd64.iso}"
 boot_timeout="${MO_SECURE_BOOT_TIMEOUT:-420}"
 rejection_timeout="${MO_SECURE_BOOT_REJECTION_TIMEOUT:-75}"
 diagnostics_dir="${MO_SECURE_BOOT_DIAGNOSTICS_DIR:-}"
@@ -180,15 +189,15 @@ expect_rejection() {
 
 extract_iso_component /live/vmlinuz "$kernel"
 extract_iso_component /live/initrd.img "$initrd"
-cat > "$os_release" <<'EOF_RELEASE'
+cat > "$os_release" <<EOF_RELEASE
 NAME="MO OS"
 ID=mo-os
-VERSION="0.5.0-alpha.2"
-VERSION_ID="0.5.0-alpha.2"
+VERSION="$mo_version"
+VERSION_ID="$mo_version"
 EOF_RELEASE
 
 openssl req -new -x509 -newkey rsa:3072 -sha256 -nodes -days 1 \
-  -subj '/CN=MO OS Alpha 0.5 CI Secure Boot/' \
+  -subj "/CN=MO OS ${mo_version} CI Secure Boot/" \
   -keyout "$private_key" -out "$certificate" >/dev/null 2>&1
 chmod 0600 "$private_key"
 
