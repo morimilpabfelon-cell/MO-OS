@@ -1,0 +1,87 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+export PATH=/usr/sbin:/usr/bin:/sbin:/bin
+
+readonly machine_name=mo-dev
+readonly worker_inside=/usr/local/libexec/mo-arch-worker
+readonly action=${1:-}
+
+machine_root=/var/lib/machines/mo-dev
+machinectl_cmd=/usr/bin/machinectl
+timeout_cmd=/usr/bin/timeout
+
+if [[ ${MO_ARCH_DISPATCH_ALLOW_TEST_MODE:-0} == 1 ]]; then
+  machine_root=${MO_ARCH_DISPATCH_MACHINE_ROOT:-$machine_root}
+  machinectl_cmd=${MO_ARCH_DISPATCH_MACHINECTL:-$machinectl_cmd}
+  case "$machine_root" in
+    /tmp/*|/mnt/*) ;;
+    *) echo 'arch_test_machine_root_invalid' >&2; exit 1 ;;
+  esac
+  case "$machinectl_cmd" in
+    /tmp/*|/mnt/*) ;;
+    *) echo 'arch_test_machinectl_invalid' >&2; exit 1 ;;
+  esac
+else
+  if [[ ${EUID:-$(id -u)} -ne 0 ]]; then
+    echo 'arch_dispatch_requires_root' >&2
+    exit 1
+  fi
+fi
+
+if [[ $# -ne 1 || "$action" != status ]]; then
+  echo 'arch_dispatch_operation_not_allowed' >&2
+  exit 2
+fi
+
+[[ -d "$machine_root" ]] || {
+  echo 'arch_domain_not_initialized' >&2
+  exit 1
+}
+[[ -x "$machine_root$worker_inside" ]] || {
+  echo 'arch_worker_missing' >&2
+  exit 1
+}
+[[ -x "$machinectl_cmd" ]] || {
+  echo 'machinectl_missing' >&2
+  exit 1
+}
+[[ -x "$timeout_cmd" ]] || {
+  echo 'timeout_missing' >&2
+  exit 1
+}
+
+"$timeout_cmd" 20 "$machinectl_cmd" start "$machine_name" >/dev/null
+raw_status="$("$timeout_cmd" 20 "$machinectl_cmd" shell --quiet "root@${machine_name}" "$worker_inside" status | tr -d '\r')"
+
+printf '%s\n' "$raw_status" | python3 -c '
+import json
+import re
+import sys
+
+raw = sys.stdin.read()
+try:
+    status = json.loads(raw)
+except json.JSONDecodeError as exc:
+    raise SystemExit("arch_worker_output_invalid") from exc
+
+expected = {"schema_version", "domain", "kernel_release", "machine", "os_release"}
+if not isinstance(status, dict) or set(status) != expected:
+    raise SystemExit("arch_worker_fields_invalid")
+if status["schema_version"] != "mo.arch.worker.status.v0.1":
+    raise SystemExit("arch_worker_schema_unsupported")
+if status["domain"] != "arch":
+    raise SystemExit("arch_worker_domain_invalid")
+if not isinstance(status["kernel_release"], str) or not re.fullmatch(r"[A-Za-z0-9._+:-]{1,128}", status["kernel_release"]):
+    raise SystemExit("arch_worker_kernel_invalid")
+if not isinstance(status["machine"], str) or not re.fullmatch(r"[A-Za-z0-9._-]{1,64}", status["machine"]):
+    raise SystemExit("arch_worker_machine_invalid")
+os_release = status["os_release"]
+if not isinstance(os_release, dict) or set(os_release) != {"ID", "NAME", "VERSION_ID"}:
+    raise SystemExit("arch_worker_os_release_invalid")
+if os_release["ID"] != "arch":
+    raise SystemExit("arch_worker_identity_mismatch")
+if not all(isinstance(value, str) and 0 < len(value) <= 128 for value in os_release.values()):
+    raise SystemExit("arch_worker_os_release_value_invalid")
+print(json.dumps(status, ensure_ascii=False, sort_keys=True, separators=(",", ":")))
+'
