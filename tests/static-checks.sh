@@ -16,6 +16,8 @@ for file in "${shell_files[@]}"; do
   esac
 done
 
+python3 -m py_compile config/includes.chroot/usr/local/sbin/mo-bodyd
+
 if command -v shellcheck >/dev/null 2>&1; then
   shellcheck -e SC2016 \
     build/*.sh \
@@ -48,6 +50,7 @@ grep -Fxq 'cryptsetup-initramfs' "$package_file"
 grep -Fxq 'grub-efi-amd64-bin' "$package_file"
 grep -Fxq 'dosfstools' "$package_file"
 grep -Fxq 'openssl' "$package_file"
+grep -Fxq 'python3' "$package_file"
 
 if grep -Eq '(^|/)(apt|pacman)[[:space:]]' config/includes.chroot/usr/local/bin/mo; then
   echo 'The public mo command must not expose direct package-manager mixing.' >&2
@@ -58,6 +61,10 @@ installer=config/includes.chroot/usr/local/sbin/mo-install
 recovery=config/includes.chroot/usr/local/sbin/mo-recovery
 snapshot=config/includes.chroot/usr/local/sbin/mo-snapshot
 updater=config/includes.chroot/usr/local/sbin/mo-update
+executor=config/includes.chroot/usr/local/sbin/mo-bodyd
+executor_service=config/includes.chroot/etc/systemd/system/mo-bodyd.service
+executor_doc=docs/MORIMIL-EXECUTOR.md
+executor_test=tests/executor-signature.sh
 mo_command=config/includes.chroot/usr/local/bin/mo
 install_autotest=config/includes.chroot/usr/local/sbin/mo-install-autotest
 recovery_autotest=config/includes.chroot/usr/local/sbin/mo-recovery-autotest
@@ -137,6 +144,41 @@ grep -Fq 'Replay protection failed' tests/update-signature.sh
 grep -Fq 'Tampered payload was accepted' tests/update-signature.sh
 grep -Fq '.snapshots/pre-update-1' tests/update-signature.sh
 
+# Morimil-controlled executor boundary.
+grep -Fq 'SCHEMA_REQUEST = "morimil.executor.request.v0.1"' "$executor"
+grep -Fq 'SCHEMA_RECEIPT = "morimil.executor.receipt.v0.1"' "$executor"
+grep -Fq 'SUPPORTED_OPERATIONS = {"system.status"}' "$executor"
+grep -Fq 'MAX_VALIDITY_SECONDS = 300' "$executor"
+grep -Fq 'authority": "receipt_signing_only"' "$executor"
+grep -Fq 'controller_authority": "exclusive_request_signer"' "$executor"
+grep -Fq 'openssl' "$executor"
+grep -Fq 'pkeyutl' "$executor"
+grep -Fq 'os.O_EXCL' "$executor"
+grep -Fq 'request_replay_rejected' "$executor"
+grep -Fq 'operation_not_allowed' "$executor"
+grep -Fq 'executor_target_mismatch' "$executor"
+grep -Fq 'receipt.sig' "$executor"
+grep -Fq 'journal.jsonl' "$executor"
+grep -Fq 'MO_BODYD_ALLOW_TEST_ROOT' "$executor"
+if grep -Fq 'shell=True' "$executor"; then
+  echo 'The executor must never invoke subprocesses through a shell.' >&2
+  exit 1
+fi
+
+grep -Fq 'NoNewPrivileges=yes' "$executor_service"
+grep -Fq 'ProtectSystem=strict' "$executor_service"
+grep -Fq 'ProtectHome=yes' "$executor_service"
+grep -Fq 'MemoryDenyWriteExecute=yes' "$executor_service"
+grep -Fq 'CapabilityBoundingSet=' "$executor_service"
+grep -Fq 'ReadWritePaths=/var/lib/mo-bodyd' "$executor_service"
+grep -Fq 'ConditionPathExists=/etc/mo/executor/pairing.json' "$executor_service"
+grep -Fq 'system.status' "$executor_doc"
+grep -Fq 'No shell command' "$executor_doc"
+grep -Fq 'Replay request was accepted.' "$executor_test"
+grep -Fq 'executor_target_mismatch' "$executor_test"
+grep -Fq 'operation_not_allowed' "$executor_test"
+grep -Fq 'make executor-test' "$workflow"
+
 # Secure Boot UKI boundary.
 grep -Fq 'OVMF_CODE_4M.secboot.fd' "$secure_boot_test"
 grep -Fq 'ukify build' "$secure_boot_test"
@@ -181,9 +223,11 @@ grep -q 'trixie-security' config/archives/mo-security.list.binary
 grep -q 'bootloader_source=/usr/share/live/build/bootloaders' build/configure.sh
 grep -q 'timeout 50' build/configure.sh
 grep -q 'set timeout=5' build/configure.sh
-grep -q 'MO OS Alpha 0.5 Secure Boot' build/configure.sh
-grep -q 'MO_OS_ALPHA_05' build/configure.sh
+grep -q 'MO OS Alpha 0.6 Morimil Executor' build/configure.sh
+grep -q 'MO_OS_ALPHA_06' build/configure.sh
 
+grep -q 'mo executor pair --controller-key FILE --instance-id ID --controller-body-id ID' "$mo_command"
+grep -q 'executor)' "$mo_command"
 grep -q 'mo install --virtual --firmware uefi --disk /dev/vda --erase --username NAME' "$mo_command"
 grep -q 'mo recovery rollback --virtual --firmware uefi --disk /dev/vda --snapshot NAME' "$mo_command"
 grep -q 'mo update verify --bundle DIR' "$mo_command"
@@ -192,8 +236,9 @@ grep -q 'recovery)' "$mo_command"
 grep -q 'update)' "$mo_command"
 grep -q 'make install-test' Makefile
 grep -q 'make update-test' Makefile
+grep -q 'make executor-test' Makefile
 grep -q 'make secure-boot-test' Makefile
-grep -q '0.5.0-alpha.2' VERSION
-grep -q '0.5.0-alpha.2' config/includes.chroot/etc/mo-release
+grep -q '0.6.0-alpha.1' VERSION
+grep -q '0.6.0-alpha.1' config/includes.chroot/etc/mo-release
 
-echo 'MO OS encrypted recovery, signed updates and Secure Boot static checks passed.'
+echo 'MO OS encrypted recovery, signed updates, Secure Boot and Morimil executor static checks passed.'
