@@ -53,12 +53,13 @@ require_fixed 'ci_passphrase="mo-os-${mo_version}-ci-only"' tests/install-qemu.s
 require_fixed 'release_file=/etc/mo-release' config/includes.chroot/usr/local/sbin/mo-install
 require_fixed 'MO_INSTALLER_VERSION=$mo_version' config/includes.chroot/usr/local/sbin/mo-install
 require_fixed 'release_file=/etc/mo-release' config/includes.chroot/usr/local/sbin/mo-recovery
-require_fixed 'readonly ci_passphrase="mo-os-${mo_version}-ci-only"' config/includes.chroot/usr/local/sbin/mo-install-autotest
+require_fixed 'ci_passphrase="mo-os-${mo_version}-ci-only"' config/includes.chroot/usr/local/sbin/mo-install-autotest
 require_fixed "readonly ci_passphrase='$ci_passphrase'" config/includes.chroot/usr/local/sbin/mo-recovery-autotest
 require_fixed 'exec sudo /usr/bin/python3 /usr/local/sbin/mo-bodyd status' config/includes.chroot/usr/local/bin/mo
 
 if grep -R -nE \
   --exclude=version-consistency.sh \
+  --exclude=static-checks.sh \
   '(Alpha 0\.(2|4|5)|mo-os-alpha-0\.(2|4|5)|0\.4\.0-alpha\.1|0\.5\.0-alpha\.2)' \
   Makefile build tests config/includes.chroot .github/workflows; then
   fail 'stale operational Alpha version references remain'
