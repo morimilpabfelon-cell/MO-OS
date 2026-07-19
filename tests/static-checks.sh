@@ -184,6 +184,7 @@ for invariant in \
   'mo-arch-worker' 'status'; do
   require_fixed "$invariant" "$dispatch"
 done
+require_fixed 'mo.arch.worker.status.v0.1' "$worker"
 require_fixed 'arch_worker_integrity_mismatch' "$arch_test"
 require_fixed 'Replay request was accepted under another bundle name.' "$executor_test"
 require_fixed 'not_ed25519' "$executor_test"
