@@ -1,77 +1,69 @@
 # MO OS
 
-MO OS es el sistema de trabajo nativo de Morimil. Está diseñado como una distribución Linux híbrida propia para ejecución local soberana, programación, creación de software y operación controlada por la instancia Morimil.
+MO OS es el sistema de trabajo nativo de Morimil: una distribución Linux híbrida propia para ejecución local soberana, desarrollo y operación controlada.
+
+> **Debian gobierna. Arch ejecuta.**
 
 ## Arquitectura
 
-- **Dominio estable:** Debian para arranque, kernel, hardware, red, seguridad, identidad técnica y recuperación.
-- **Dominio de trabajo:** Arch Linux dentro de `systemd-nspawn` para compiladores, motores y herramientas recientes.
-- **Capa MO:** comandos, políticas, construcción, instalación y coordinación entre Debian y Arch.
+- **Debian:** arranque, kernel, hardware, red, almacenamiento, cifrado, recuperación, confianza y autorización.
+- **Arch Linux:** dominio subordinado `systemd-nspawn` para compiladores, SDK, motores y trabajo reciente.
+- **Capa MO:** políticas, comandos, construcción, instalación y evidencia entre ambos dominios.
 
-Para Morimil es un solo sistema. `apt` y `pacman` nunca administran la misma raíz. **Debian gobierna el sistema; Arch ejecuta trabajo dentro de una frontera subordinada.**
-
-MO OS permanece Linux nativo y puro en su composición. No incorpora Android, Android SDK, APK, Jetpack, Room ni dependencias móviles. Morimil-app controla el sistema desde fuera mediante una frontera criptográfica neutral; el transporte o cliente que entregue una solicitud no se integra en la raíz Debian ni en el dominio Arch.
+`apt` y `pacman` nunca administran la misma raíz. Android no forma parte de MO OS: no se incluyen Android SDK, APK, Jetpack, Room ni dependencias móviles. Morimil-app puede controlar desde fuera mediante solicitudes firmadas, pero no entra en Debian, Arch ni la ISO.
 
 ## Estado actual
 
-**Alpha 0.6 — Morimil Executor Foundation (`0.6.0-alpha.1`)**
+**Alpha 0.6 — Signed Debian-Governed Arch Executor (`0.6.0-alpha.1`)**
 
-Esta fase conserva la instalación virtual cifrada, snapshots, rollback, actualizaciones firmadas y Secure Boot UKI de Alpha 0.5, y añade la primera frontera nativa de trabajo controlada externamente por Morimil:
+La rama conserva instalación virtual LUKS2/Btrfs, snapshots, rollback, actualizaciones firmadas y Secure Boot UKI. Añade:
 
-- Servicio Linux nativo `mo-bodyd` ejecutado por Debian.
-- Identidad Ed25519 local del executor usada únicamente para firmar recibos.
-- Emparejamiento exclusivo con una instancia Morimil y una autoridad de control registrada.
-- Solicitudes JSON canónicas firmadas por la autoridad de control.
-- Verificación exacta de `instance_id`, `controller_body_id` y `target_executor_id`.
-- Ventana máxima de validez de cinco minutos.
-- Protección atómica contra replay mediante `request_id`.
-- Lista local y cerrada de operaciones permitidas.
-- `mo-arch-dispatch` en Debian como única puerta hacia Arch.
-- `mo-arch-worker` dentro de Arch con una interfaz fija.
-- Recibos JSON firmados por el executor.
-- Journal local append-only de eventos de seguridad.
-- Servicio systemd sin capacidades Linux y con filesystem del sistema protegido.
+- `mo-bodyd`, executor Linux nativo ejecutado bajo política Debian;
+- identidad Ed25519 limitada a `receipt_signing_only`;
+- emparejamiento exclusivo con una autoridad externa Ed25519;
+- validación exacta de identidad, pairing, clave, destino, tiempo y replay;
+- firma sobre los mismos bytes canónicos que fueron leídos y hashados;
+- límite de tamaño para solicitudes, claves, firmas y salida de comandos;
+- recibos firmados publicados mediante directorio atómico;
+- colas `processed` y `quarantine` para impedir reintentos infinitos;
+- `mo-arch-dispatch` como única puerta Debian→Arch;
+- verificación SHA-256 del worker Arch contra la copia autorizada de Debian;
+- `mo doctor` extendido a toda la frontera.
 
-Las operaciones actuales son:
+## Operaciones permitidas
 
 ```text
-system.status  — ejecutada localmente y gobernada por Debian
+system.status  — ejecutada localmente por Debian
 arch.status    — autorizada por Debian y ejecutada por el worker fijo de Arch
 ```
 
-Ambas operaciones exigen parámetros vacíos. Alpha 0.6 no permite comandos arbitrarios, escritura de memoria canónica, acceso autónomo a red, dispositivos, GPU ni archivos protegidos. La única ejecución habilitada dentro de Arch es la lectura estructurada de estado mediante `arch.status`.
+Ambas exigen `parameters: {}`. No existe shell arbitraria, instalación de paquetes por solicitud, escritura de memoria canónica, acceso autónomo a red, GPU, dispositivos ni archivos protegidos.
 
-## Frontera externa de control
+## Flujo firmado
 
 ```text
-Morimil-app / autoridad Morimil
-  fuera de MO OS
-  identidad, memoria y decisión
-          |
-          | solicitud Ed25519 firmada
-          v
-MO OS / Debian / mo-bodyd
-  valida autoridad, destino, tiempo y replay
-          |
-          | arch.status autorizado
-          v
-Debian / mo-arch-dispatch
-  permite únicamente status y aplica timeout
-          |
-          v
-Arch / mo-arch-worker
-  produce evidencia estructurada
-          |
-          v
+Morimil firma request.json
+        ↓
+Debian / mo-bodyd valida Ed25519, política, destino, tiempo y replay
+        ↓
+Debian autoriza system.status o arch.status
+        ↓
+mo-arch-dispatch verifica el worker y permite solo status
+        ↓
+Arch / mo-arch-worker produce evidencia estructurada
+        ↓
 Debian valida la evidencia y firma el recibo
-          |
-          v
-Morimil verifica el resultado
 ```
 
-La clave del executor declara autoridad `receipt_signing_only`. No puede concederse permisos, modificar la identidad de Morimil ni convertirse en escritor de memoria canónica.
+Los estados del recibo son:
 
-El contrato de solicitudes es neutral y no instala componentes del cliente dentro de MO OS. Morimil-app puede producir solicitudes compatibles, pero Android permanece completamente fuera del sistema operativo.
+```text
+completed  solicitud aceptada y operación exitosa
+failed     solicitud aceptada, pero ejecución o evidencia falló
+rejected   solicitud rechazada antes de ser aceptada
+```
+
+Un `request_id` aceptado no puede reutilizarse bajo otro nombre de bundle. El replay termina con error y no crea un segundo recibo.
 
 ## Inicialización del executor
 
@@ -84,38 +76,7 @@ sudo mo executor pair \
 mo executor status
 ```
 
-El emparejamiento es único y fail-closed durante esta fase. Al completarse, se habilita `mo-bodyd.service`.
-
-La especificación completa está en `docs/MORIMIL-EXECUTOR.md`.
-
-## Secure Boot y actualizaciones
-
-La cadena virtual conserva:
-
-- extracción del kernel y del initramfs reales desde la ISO;
-- construcción de una Unified Kernel Image mediante `ukify`;
-- firma temporal RSA-3072/SHA-256 del UKI;
-- aceptación del UKI firmado bajo OVMF Secure Boot;
-- rechazo del UKI sin firma o modificado;
-- actualización firmada con secuencia monotónica;
-- snapshot Btrfs previo a cada actualización permitida.
-
-Las claves de Secure Boot y actualización siguen siendo efímeras de CI. No son claves de producción.
-
-## Raíz cifrada y recuperación
-
-```text
-GPT
-├── /dev/vda1  ESP FAT32 — 512 MiB
-├── /dev/vda2  /boot ext4 — 1 GiB
-└── /dev/vda3  LUKS2
-    └── Btrfs
-        ├── @
-        ├── @home
-        └── @snapshots
-```
-
-`@home` permanece separado del rollback de la raíz. La recuperación crea una copia de seguridad de la raíz actual antes de restaurar el snapshot seleccionado.
+El emparejamiento es único y fail-closed en esta Alpha. La especificación está en `docs/MORIMIL-EXECUTOR.md`; la frontera Debian→Arch está en `docs/DEBIAN-ARCH-EXECUTION.md`.
 
 ## Instalación virtual cifrada
 
@@ -128,9 +89,22 @@ mo install \
   --username NOMBRE
 ```
 
-El instalador rechaza discos físicos, `/dev/sda`, NVMe, entornos no virtualizados, discos menores de 8 GiB, objetivos montados y cualquier ejecución sin confirmación explícita.
+La instalación crea:
 
-**No debe utilizarse todavía para reemplazar Windows ni instalar sobre una laptop real.**
+```text
+GPT
+├── /dev/vda1  ESP FAT32 — 512 MiB
+├── /dev/vda2  /boot ext4 — 1 GiB
+└── /dev/vda3  LUKS2
+    └── Btrfs
+        ├── @
+        ├── @home
+        └── @snapshots
+```
+
+El instalador deriva `MO_INSTALLER_VERSION` de `/etc/mo-release`; no mantiene una versión histórica fija. Rechaza discos físicos, SATA, NVMe, entornos no virtualizados, discos menores de 8 GiB, objetivos montados y ejecuciones sin confirmación explícita.
+
+**No debe usarse todavía para reemplazar Windows ni instalar sobre una laptop real.**
 
 ## Construcción
 
@@ -144,11 +118,13 @@ sudo make update-test
 sudo make iso
 ```
 
-La imagen resultante aparece en:
+La imagen aparece en:
 
 ```text
 artifacts/mo-os-alpha-0.6-amd64.iso
 ```
+
+La construcción rechaza `.pyc`, `.pyo` y directorios `__pycache__` dentro del árbol que se copia a la ISO.
 
 ## Pruebas
 
@@ -161,15 +137,15 @@ sudo make update-test
 make install-test
 ```
 
-`executor-test` genera claves Ed25519 temporales y comprueba firmas, recibos, replay, manipulación, destino incorrecto, operación no permitida, expiración y una solicitud firmada `arch.status`. También rechaza parámetros y evidencia que no represente un dominio Arch válido.
+Las pruebas cubren Ed25519-only, firmas exactas, firma sobredimensionada, replay con otro nombre, manipulación de política, `system.status`, `arch.status`, worker modificado, evidencia malformada, dominio incorrecto, Secure Boot, ISO live, actualización firmada, instalación cifrada y rollback.
 
-`arch-dispatch-test` comprueba que Debian solo permita el verbo fijo `status`, rechace una operación arbitraria, valide la evidencia del worker y falle si el dominio Arch no existe.
+### Alcance real de CI
 
-`secure-boot-test` construye un UKI desde el kernel y el initramfs de la ISO, firma el UKI, enrola una variable store OVMF desechable, exige un arranque válido y comprueba el rechazo de las variantes sin firma y alterada.
+La prueba Debian→Arch usa sustitutos controlados de `machinectl` y del root Arch para comprobar el contrato, la lista cerrada y la evidencia. El workflow del sistema valida por separado la ISO, Secure Boot, arranque live, instalación cifrada y rollback.
 
-`update-test` genera una clave temporal, firma un bundle, crea una raíz Btrfs desechable, aplica la actualización, comprueba el snapshot previo, rechaza repetir la secuencia y rechaza una copia alterada.
+CI **todavía no descarga el bootstrap de Arch ni arranca un contenedor `mo-dev` real en cada ejecución**. Esa prueba de integración debe añadirse antes de habilitar instalación en hardware físico o operaciones de trabajo más amplias.
 
-## Comandos dentro de MO OS
+## Comandos
 
 ```text
 mo status
@@ -191,4 +167,4 @@ mo update apply --bundle DIRECTORIO
 mo update status
 ```
 
-La instalación sobre hardware real permanecerá bloqueada hasta validar claves de producción, rotación y revocación, recuperación ante actualizaciones interrumpidas, copias externas y una matriz del hardware específico de la computadora objetivo.
+La instalación física seguirá bloqueada hasta validar claves de producción, rotación y revocación, recuperación ante interrupciones, copias externas, un contenedor Arch real y la matriz del hardware objetivo.
