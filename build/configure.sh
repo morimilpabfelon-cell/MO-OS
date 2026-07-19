@@ -9,6 +9,15 @@ command -v lb >/dev/null 2>&1 || {
   exit 1
 }
 
+if find config/includes.chroot -type f \( -name '*.pyc' -o -name '*.pyo' \) -print -quit | grep -q .; then
+  echo 'Python bytecode must not be packaged in the MO OS source tree.' >&2
+  exit 1
+fi
+if find config/includes.chroot -type d -name '__pycache__' -print -quit | grep -q .; then
+  echo '__pycache__ directories must not be packaged in MO OS.' >&2
+  exit 1
+fi
+
 for native_helper in \
   config/includes.chroot/usr/local/libexec/mo-arch-dispatch \
   config/includes.chroot/usr/local/libexec/mo-arch-worker; do
