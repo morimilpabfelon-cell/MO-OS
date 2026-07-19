@@ -1,4 +1,4 @@
-.PHONY: help check version-check configure iso verify boot-test secure-boot-test install-test update-test executor-test arch-dispatch-test run clean
+.PHONY: help check version-check iso-verifier-test configure iso verify boot-test secure-boot-test install-test update-test executor-test arch-dispatch-test run clean
 
 SHELL := /bin/bash
 ISO := artifacts/mo-os-alpha-0.6-amd64.iso
@@ -6,11 +6,12 @@ ISO := artifacts/mo-os-alpha-0.6-amd64.iso
 help:
 	@printf '%s\n' \
 	  'MO OS build commands' \
-	  '  make check               Static and version consistency validation' \
+	  '  make check               Static, version and ISO-verifier validation' \
 	  '  make version-check       Verify release, ISO and CI version agreement' \
+	  '  make iso-verifier-test   Test ISO digest, path and metadata rejection' \
 	  '  make configure           Generate live-build state' \
 	  '  sudo make iso            Build the bootable ISO' \
-	  '  make verify              Inspect and hash the ISO' \
+	  '  make verify              Verify stored checksum and ISO metadata' \
 	  '  make boot-test           Verify terminal boot in QEMU' \
 	  '  make secure-boot-test    Boot a signed UKI and reject unsigned or modified UKIs' \
 	  '  make install-test        Install, unlock, mutate, roll back and reboot a disposable QEMU disk' \
@@ -23,9 +24,13 @@ help:
 check:
 	@bash tests/static-checks.sh
 	@bash tests/version-consistency.sh
+	@bash tests/iso-verifier.sh
 
 version-check:
 	@bash tests/version-consistency.sh
+
+iso-verifier-test:
+	@bash tests/iso-verifier.sh
 
 configure:
 	@bash build/configure.sh
