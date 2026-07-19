@@ -1,5 +1,5 @@
 NAME="MO OS"
 ID=mo-os
-VERSION="0.5.0-alpha.2"
-VERSION_CODENAME="secure-boot-uki-foundation"
+VERSION="0.6.0-alpha.1"
+VERSION_CODENAME="morimil-executor-foundation"
 ARCHITECTURE="amd64"
