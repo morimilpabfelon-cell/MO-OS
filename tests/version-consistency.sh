@@ -46,6 +46,11 @@ require_fixed "ISO := $iso_relative" Makefile
 require_fixed "$iso_relative" build/build-iso.sh
 require_fixed "$iso_relative" build/verify-iso.sh
 require_fixed "$iso_relative" .github/workflows/boot-candidate.yml
+require_fixed 'ISO checksum mismatch' build/verify-iso.sh
+require_fixed 'Checksum file must contain exactly one line.' build/verify-iso.sh
+require_fixed 'MO_OS_ALPHA_06' build/verify-iso.sh
+require_fixed 'MO OS Alpha 0.6 Morimil Executor' build/verify-iso.sh
+require_fixed 'MO OS Project' build/verify-iso.sh
 require_fixed 'mo_version="$(<"$repo_root/VERSION")"' tests/boot-qemu.sh
 require_fixed 'mo_version="$(<"$repo_root/VERSION")"' tests/secure-boot-qemu.sh
 require_fixed 'mo_version="$(<"$repo_root/VERSION")"' tests/install-qemu.sh
