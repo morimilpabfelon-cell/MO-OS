@@ -142,7 +142,7 @@ executor() {
       sudo systemctl enable --now mo-bodyd.service
       ;;
     status)
-      exec /usr/bin/python3 /usr/local/sbin/mo-bodyd status
+      exec sudo /usr/bin/python3 /usr/local/sbin/mo-bodyd status
       ;;
     process)
       shift
