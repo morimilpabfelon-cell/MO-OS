@@ -89,7 +89,15 @@ read -r domain_worker_sha _ < <("$sha256sum_cmd" "$resolved_domain_worker")
   exit 1
 }
 
-"$timeout_cmd" 20 "$machinectl_cmd" start "$machine_name" >/dev/null
+machine_state="$($timeout_cmd 5 "$machinectl_cmd" show "$machine_name" --property=State --value 2>/dev/null)" || {
+  echo 'arch_domain_state_unavailable' >&2
+  exit 1
+}
+[[ "$machine_state" == running ]] || {
+  echo 'arch_domain_not_running' >&2
+  exit 1
+}
+
 raw_status="$("$timeout_cmd" 20 "$machinectl_cmd" shell --quiet "root@${machine_name}" "$worker_inside" status | tr -d '\r')"
 
 printf '%s\n' "$raw_status" | python3 -c '
