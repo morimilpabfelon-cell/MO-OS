@@ -2,25 +2,38 @@
 
 ## Purpose
 
-MO OS is Morimil's native work system. It remains a pure Debian and Arch Linux hybrid. In Alpha `0.6.0-alpha.1`, Morimil remains the exclusive controller and canonical-memory authority while MO OS begins as a subordinate native executor that accepts only explicitly signed work requests and returns signed evidence.
+MO OS is Morimil's native work system and remains a pure Debian and Arch Linux hybrid.
 
-The controller is external to MO OS. Morimil-app may act as the current controller, but no Android runtime, Android SDK, APK, mobile database or application component is installed in Debian or Arch.
+> Debian governs. Arch executes.
+
+In Alpha `0.6.0-alpha.1`, Morimil remains the external controller and canonical-memory authority. MO OS accepts signed requests, applies Debian policy, delegates only explicitly permitted work to Arch and returns signed evidence.
+
+No Android runtime, Android SDK, APK, mobile database or application component is installed in Debian or Arch. The request contract describes authority and evidence; it is not an Android integration layer.
+
+## Execution path
 
 ```text
 External Morimil authority
-  exclusive request authority
-        |
-        | canonical Ed25519-signed request
-        v
-MO OS / Debian / mo-bodyd
-  validates identity, target, time and replay state
-        |
-        | allowlisted operation only
-        v
-Arch Linux domain when explicitly authorized
+  signs one canonical request
         |
         v
-signed execution receipt
+Debian / mo-bodyd
+  verifies signature, identity, target, time and replay state
+        |
+        | local operation: system.status
+        | delegated operation: arch.status
+        v
+Debian / mo-arch-dispatch
+  accepts only the fixed verb status
+  applies a 20-second boundary timeout
+        |
+        v
+Arch / mo-arch-worker
+  returns structured Arch evidence
+        |
+        v
+Debian validates the evidence
+  and signs the final receipt
 ```
 
 This phase does not make MO OS an `active_writer` for canonical Genesis memory. The executor key may sign receipts only. It cannot grant itself authority, change Morimil identity or write canonical memory.
@@ -29,17 +42,15 @@ This phase does not make MO OS an `active_writer` for canonical Genesis memory. 
 
 MO OS contains only Linux-native system components:
 
-1. Debian owns boot, kernel, hardware, security, storage, networking and recovery.
+1. Debian owns boot, kernel, hardware, security, storage, networking, recovery and request authorization.
 2. Arch Linux provides a subordinate work domain through `systemd-nspawn`.
-3. The MO layer coordinates policies and execution between the two Linux domains.
+3. The MO layer coordinates policy and evidence between the two Linux domains.
 4. External clients communicate through signed files or a future neutral transport.
 5. Client technology never becomes part of the MO OS root filesystem merely because it controls requests.
 
-The request contract describes authority and evidence. It is not an Android integration layer.
+## Trust requirements
 
-## Initial trust boundary
-
-`mo-bodyd` requires all of the following before it can process work:
+`mo-bodyd` requires all of the following before processing work:
 
 1. a locally initialized executor receipt-signing identity;
 2. exactly one paired Morimil Instance;
@@ -49,16 +60,64 @@ The request contract describes authority and evidence. It is not an Android inte
 6. a valid Ed25519 signature from the paired controller;
 7. an exact executor target;
 8. a validity window no longer than five minutes;
-9. a request identifier that has never been accepted before;
-10. an operation present in the local allowlist.
+9. a request identifier never accepted before;
+10. an operation present in the closed policy set.
 
-The initial allowlist contains only:
+## Current operations
+
+### `system.status`
+
+Executed locally by Debian. Parameters must be empty. The result reports:
+
+- MO OS release information;
+- whether the Arch domain exists;
+- local Debian-governed operations;
+- operations delegated to Arch.
+
+### `arch.status`
+
+Authorized by Debian and executed through the fixed Arch worker. Parameters must be empty.
+
+`mo-bodyd` invokes only:
 
 ```text
-system.status
+/bin/bash /usr/local/libexec/mo-arch-dispatch status
 ```
 
-No shell command, package installation, file mutation, network request, device access or Arch-domain execution is authorized by this foundation.
+The dispatcher invokes only:
+
+```text
+/usr/local/libexec/mo-arch-worker status
+```
+
+No shell command supplied by the controller is forwarded. No free-form argument is accepted.
+
+The worker result must contain exactly:
+
+```text
+schema_version
+domain
+kernel_release
+machine
+os_release
+```
+
+Debian rejects the result unless:
+
+- `schema_version` is `mo.arch.worker.status.v0.1`;
+- `domain` is `arch`;
+- `os_release.ID` is `arch`;
+- all fields match strict type and length constraints.
+
+The signed receipt exposes:
+
+```json
+{
+  "governance": "debian",
+  "execution": "arch",
+  "arch_status": {}
+}
+```
 
 ## Executor identity
 
@@ -74,11 +133,9 @@ This generates an Ed25519 keypair under:
 /var/lib/mo-bodyd/identity/
 ```
 
-The private key is mode `0600`. The public-key fingerprint derives the executor identifier. The identity declares its authority as `receipt_signing_only`.
+The private key is mode `0600`. The identity declares authority `receipt_signing_only`.
 
 ## Controller pairing
-
-Pair one authorized Morimil controller:
 
 ```bash
 sudo mo executor pair \
@@ -87,11 +144,9 @@ sudo mo executor pair \
   --controller-body-id CONTROLLER_ID
 ```
 
-`controller_body_id` is a protocol identifier retained for compatibility with Morimil's Body model. It does not imply that Android is installed in MO OS or that the executor depends on a mobile runtime.
+`controller_body_id` is a protocol identifier retained for compatibility with Morimil's Body model. It does not introduce an Android dependency.
 
-Pairing is fail-closed and one-time in this phase. It stores only the controller public key and the exact Instance and controller identifiers. A second controller cannot silently replace the first one.
-
-After successful pairing, the command enables and starts `mo-bodyd.service`.
+Pairing is one-time and fail-closed in this phase. Only the controller public key and exact identifiers are stored.
 
 ## Request bundle
 
@@ -104,7 +159,7 @@ request.sig
 
 `request.sig` is the base64 representation of the raw 64-byte Ed25519 signature over the exact bytes of `request.json`.
 
-The request object contains exactly:
+The request contains exactly:
 
 ```text
 schema_version
@@ -123,7 +178,7 @@ JSON must use UTF-8, sorted keys, compact separators and one final newline. Unkn
 
 ## Replay and expiry
 
-A request is consumed only after its signature, authority, target, operation and validity window pass. Its identifier is then recorded atomically under:
+After cryptographic and policy validation, the request identifier is recorded atomically under:
 
 ```text
 /var/lib/mo-bodyd/accepted/
@@ -131,7 +186,7 @@ A request is consumed only after its signature, authority, target, operation and
 
 The same identifier cannot be accepted again. Requests expire after at most five minutes and tolerate no more than sixty seconds of future clock skew.
 
-## Signed receipts
+## Signed receipts and audit
 
 Every processed request produces:
 
@@ -143,29 +198,13 @@ Every processed request produces:
 
 The receipt includes the request digest, executor identifier, operation, status, timestamps, output or rejection reason. It is signed by the executor's receipt-only Ed25519 key.
 
-The controlling Morimil component must verify the executor identity and receipt signature before trusting the result. A valid receipt proves which executor processed which exact request; it does not grant the executor new authority.
-
-## Audit state
-
-Security-relevant events are appended to:
+Security events are appended to:
 
 ```text
 /var/lib/mo-bodyd/journal.jsonl
 ```
 
-The journal records identity initialization, controller pairing, processed requests and bundle-level failures. This first journal is local append-only evidence, not yet a Genesis canonical-memory stream.
-
-## Service hardening
-
-`mo-bodyd.service` runs with:
-
-- no Linux capabilities;
-- `NoNewPrivileges`;
-- a read-only system filesystem;
-- only `/var/lib/mo-bodyd` writable;
-- protected home, kernel, logs and control groups;
-- memory that cannot become executable;
-- a restrictive `0077` umask.
+This journal is local append-only evidence, not a canonical Genesis memory stream.
 
 ## Validation
 
@@ -173,32 +212,36 @@ Run:
 
 ```bash
 make executor-test
+make arch-dispatch-test
 ```
 
-The test generates temporary Ed25519 identities and verifies:
+The tests verify:
 
-- one valid signed request;
+- valid signed `system.status`;
+- valid signed `arch.status`;
 - signed receipt verification;
 - replay rejection;
 - tampered-request rejection;
 - wrong-target rejection;
 - unsupported-operation rejection;
 - expired-request rejection;
-- initialized and paired status reporting.
+- rejection of parameters for `arch.status`;
+- rejection of malformed or non-Arch evidence;
+- rejection of arbitrary dispatcher operations;
+- rejection when the Arch domain is absent.
 
 ## Deliberate limits
 
-Alpha `0.6.0-alpha.1` does not yet provide:
+Alpha `0.6.0-alpha.1` does not provide:
 
 - a network transport or controller UI;
-- network communication;
-- Arch execution sessions;
-- arbitrary commands;
+- arbitrary commands or an interactive executor shell;
+- package installation through signed requests;
 - filesystem mutation;
+- autonomous network requests;
 - GPU or device access;
-- signed capability grants beyond `system.status`;
 - executor key rotation or controller replacement;
 - canonical-memory writes;
 - transfer of `active_writer` authority.
 
-Those capabilities must be added individually, each with a narrow signed contract, resource limits, negative tests and a signed receipt. Any Android-side implementation remains in Morimil-app and never becomes an MO OS package or system dependency.
+Future capabilities must be added individually with a narrow signed contract, resource limits, negative tests and a signed receipt.
