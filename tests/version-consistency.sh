@@ -53,14 +53,18 @@ require_fixed 'Checksum file must contain exactly one line.' build/verify-iso.sh
 require_fixed 'extract_pvd_field' build/verify-iso.sh
 require_fixed 'ISO metadata field missing or duplicated' build/verify-iso.sh
 require_fixed 'ISO metadata mismatch' build/verify-iso.sh
-require_fixed "assert_pvd_field Volume 'MO_OS_ALPHA_06'" build/verify-iso.sh
-require_fixed "assert_pvd_field Application 'MO OS Alpha 0.6 Morimil Executor'" build/verify-iso.sh
-require_fixed "assert_pvd_field Publisher 'MO OS Project'" build/verify-iso.sh
+require_fixed "assert_pvd_field 'Volume Id' 'MO_OS_ALPHA_06'" build/verify-iso.sh
+require_fixed "assert_pvd_field 'App Id' 'MO OS Alpha 0.6 Morimil Executor'" build/verify-iso.sh
+require_fixed "assert_pvd_field 'Publisher Id' 'MO OS Project'" build/verify-iso.sh
 require_fixed 'ISO verifier accepted an incorrect stored hash.' tests/iso-verifier.sh
 require_fixed 'ISO verifier accepted a checksum for another path.' tests/iso-verifier.sh
 require_fixed 'ISO verifier accepted a missing PVD field.' tests/iso-verifier.sh
 require_fixed 'ISO verifier accepted an incorrect PVD field value.' tests/iso-verifier.sh
 require_fixed 'ISO verifier accepted a duplicated PVD field.' tests/iso-verifier.sh
+require_fixed 'Volume id' tests/iso-verifier.sh
+require_fixed 'Volume Id' tests/iso-verifier.sh
+require_fixed 'App Id' tests/iso-verifier.sh
+require_fixed 'Publisher Id' tests/iso-verifier.sh
 require_fixed 'actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5' .github/workflows/boot-candidate.yml
 require_fixed 'actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5' .github/workflows/foundation-validation.yml
 require_fixed 'actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02' .github/workflows/boot-candidate.yml
