@@ -19,7 +19,7 @@ fi
   echo "$target already exists; refusing to overwrite it." >&2
   exit 1
 }
-[[ -x "$worker_source" ]] || {
+[[ -r "$worker_source" ]] || {
   echo "Missing governed Arch worker: $worker_source" >&2
   exit 1
 }
