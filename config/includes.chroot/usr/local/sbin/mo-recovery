@@ -22,7 +22,8 @@ read_release_version() {
   return 1
 }
 
-readonly mo_version="$(read_release_version)"
+mo_version="$(read_release_version)"
+readonly mo_version
 
 command_name=''
 disk=''
