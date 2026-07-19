@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+export LC_ALL=C
+
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
@@ -16,7 +18,7 @@ checksum_file="${iso_path}.sha256"
   exit 1
 }
 
-for command_name in sha256sum xorriso; do
+for command_name in grep sed sha256sum xorriso; do
   command -v "$command_name" >/dev/null 2>&1 || {
     echo "Missing ISO verification dependency: $command_name" >&2
     exit 1
@@ -45,15 +47,42 @@ actual_hash=${actual_hash%% *}
 }
 
 metadata="$(xorriso -indev "$iso_path" -pvd_info 2>&1)"
-for required_metadata in \
-  'MO_OS_ALPHA_06' \
-  'MO OS Alpha 0.6 Morimil Executor' \
-  'MO OS Project'; do
-  grep -Fq "$required_metadata" <<< "$metadata" || {
-    echo "ISO metadata is missing: $required_metadata" >&2
+
+extract_pvd_field() {
+  local field=$1
+  local pattern="^[[:space:]]*${field}[[:space:]]+Id[[:space:]]*:"
+  local value
+  local -a matches=()
+
+  mapfile -t matches < <(grep -Ei "$pattern" <<< "$metadata" || true)
+  ((${#matches[@]} == 1)) || {
+    echo "ISO metadata field missing or duplicated: field=$field matches=${#matches[@]}" >&2
+    printf '%s\n' "$metadata" >&2
     exit 1
   }
-done
+
+  value=${matches[0]#*:}
+  value="$(sed -E "s/^[[:space:]]*'//; s/'[[:space:]]*$//; s/^[[:space:]]+//; s/[[:space:]]+$//" <<< "$value")"
+  [[ -n "$value" ]] || {
+    echo "ISO metadata field is empty: field=$field" >&2
+    exit 1
+  }
+  printf '%s\n' "$value"
+}
+
+assert_pvd_field() {
+  local field=$1 expected=$2 actual
+  actual="$(extract_pvd_field "$field")"
+  [[ "${actual^^}" == "${expected^^}" ]] || {
+    echo "ISO metadata mismatch: field=$field expected=$expected actual=$actual" >&2
+    printf '%s\n' "$metadata" >&2
+    exit 1
+  }
+}
+
+assert_pvd_field Volume 'MO_OS_ALPHA_06'
+assert_pvd_field Application 'MO OS Alpha 0.6 Morimil Executor'
+assert_pvd_field Publisher 'MO OS Project'
 
 printf 'ISO_SHA256=%s\n' "$actual_hash"
 printf '%s\n' "$metadata"
