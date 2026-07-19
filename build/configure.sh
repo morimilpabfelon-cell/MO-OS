@@ -19,9 +19,9 @@ lb config noauto \
   --security false \
   --apt-recommends false \
   --bootappend-live "boot=live components hostname=mo-os username=mo locales=es_PE.UTF-8 keyboard-layouts=latam systemd.unit=mo-boot-test.target" \
-  --iso-application "MO OS Alpha 0.5 Secure Boot" \
+  --iso-application "MO OS Alpha 0.6 Morimil Executor" \
   --iso-publisher "MO OS Project" \
-  --iso-volume "MO_OS_ALPHA_05"
+  --iso-volume "MO_OS_ALPHA_06"
 
 bootloader_source=/usr/share/live/build/bootloaders
 [[ -d "$bootloader_source" ]] || {
