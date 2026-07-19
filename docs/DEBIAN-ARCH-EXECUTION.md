@@ -2,93 +2,90 @@
 
 ## Architectural rule
 
-MO OS is one improved hybrid Linux system with two separated domains:
+MO OS is one improved hybrid Linux system with two separated roots and one authority path:
 
 ```text
+signed Morimil request
+        |
+        v
 Debian host
-  sovereign control domain
+  sovereign control, policy and validation
         |
         | fixed allowlisted dispatch
         v
 Arch Linux systemd-nspawn domain
-  subordinate work domain
+  subordinate work execution
         |
-        | canonical evidence
+        | structured evidence
         v
 Debian validates and signs the final receipt
 ```
 
-Debian owns boot, kernel, devices, networking, storage, encryption, recovery, trust policy and the Morimil executor boundary. Arch owns recent compilers, SDKs, engines and work execution. `apt` and `pacman` never administer the same root.
+Debian owns boot, kernel, devices, networking, storage, encryption, recovery, trust policy and the executor boundary. Arch owns recent compilers, SDKs, engines and subordinate work. `apt` and `pacman` never administer the same root.
+
+Android is not part of MO OS. No Android SDK, APK, Jetpack, Room or mobile runtime is installed in Debian or Arch.
 
 ## Native components
 
-The first governed execution path contains only Linux-native components:
-
 ```text
-/usr/local/libexec/mo-arch-dispatch   Debian side
-/usr/local/libexec/mo-arch-worker     copied into Arch
+/usr/local/libexec/mo-arch-dispatch   authoritative Debian dispatcher
+/usr/local/libexec/mo-arch-worker     fixed worker copied into Arch
 ```
 
-There is no Android SDK, APK, Jetpack, Room or mobile runtime in MO OS.
-
-## Debian dispatcher
+### Debian dispatcher
 
 `mo-arch-dispatch`:
 
-- runs on Debian;
-- accepts exactly one action: `status`;
+- accepts exactly one internal action: `status`;
 - rejects extra arguments and arbitrary commands;
-- requires the pinned `mo-dev` machine root;
-- requires the fixed worker path;
-- starts the `mo-dev` container through `machinectl`;
+- requires the fixed `mo-dev` machine root;
+- compares the SHA-256 of the Arch worker with Debian's authoritative copy before execution;
+- starts `mo-dev` through `machinectl`;
 - invokes only `/usr/local/libexec/mo-arch-worker status`;
 - applies a 20-second timeout;
-- rejects malformed, unknown or non-Arch output;
-- emits canonical validated JSON.
+- validates the exact output schema and Arch identity;
+- emits normalized JSON.
 
-It never forwards user-supplied command strings into Arch.
+A modified, missing, symlinked or non-executable worker is rejected before the container is invoked.
 
-## Arch worker
+### Arch worker
 
 `mo-arch-worker`:
 
-- runs inside the Arch domain;
 - accepts exactly `status`;
 - verifies that `/etc/os-release` identifies Arch Linux;
-- reports a fixed schema containing the Arch identity, machine architecture and shared kernel release;
+- reports only the fixed status schema;
 - performs no network access, package installation or filesystem mutation.
 
-`mo-dev-init` installs this worker into the Arch root and runs it once before enabling the container service. Initialization fails closed if the worker cannot prove that the domain is Arch.
+`mo-dev-init` installs the worker with mode `0755`, verifies its SHA-256 against the Debian source, and runs it once before enabling the container service.
 
-## Current activation state
+## Signed activation
 
-This commit establishes and tests the Debian-to-Arch execution boundary. It does not yet expose `arch.status` through a signed Morimil request. That connection will be enabled only after the dispatcher and worker pass CI as isolated components.
-
-The next activation step is narrow:
+The boundary is connected to the signed executor as `arch.status`:
 
 ```text
-signed Morimil request: arch.status
-        -> mo-bodyd validates authority
+arch.status request signed by the paired controller
+        -> mo-bodyd verifies exact request bytes and policy
+        -> Debian records replay protection
         -> Debian calls mo-arch-dispatch status
-        -> Arch runs mo-arch-worker status
-        -> Debian validates evidence
-        -> mo-bodyd signs the receipt
+        -> Arch runs the fixed worker
+        -> Debian validates the returned evidence
+        -> mo-bodyd creates an atomic signed receipt
 ```
 
-No arbitrary shell, package operation, network operation or project build is authorized by this status foundation.
+Both `system.status` and `arch.status` require an empty `parameters` object. No shell, package operation, network operation or project build is authorized.
 
-## Validation
+A request rejected before acceptance receives status `rejected`. A valid accepted request whose Arch execution or evidence validation fails receives status `failed`. A repeated accepted `request_id` is rejected as replay and does not create a second receipt.
+
+## Validation scope
 
 Run:
 
 ```bash
+make executor-test
 make arch-dispatch-test
 ```
 
-The test verifies:
+The automated tests verify signatures, Ed25519 key enforcement, replay under a different bundle name, worker integrity, fixed operation dispatch, malformed evidence, wrong-domain evidence and failure semantics.
 
-- valid canonical Arch evidence;
-- rejection of arbitrary operations;
-- rejection of malformed worker evidence;
-- rejection when the Arch domain is missing;
-- Bash syntax and ShellCheck validation when available.
+The CI contract test uses controlled substitutes for `machinectl` and the Arch machine root. The system workflow separately validates ISO construction, Secure Boot, live boot, encrypted installation and rollback. It does **not** currently download the Arch bootstrap and boot a real `mo-dev` container on every CI run; that remains a distinct integration test to add before hardware deployment.
