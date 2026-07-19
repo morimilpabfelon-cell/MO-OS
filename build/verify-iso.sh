@@ -33,6 +33,10 @@ read -r expected_hash recorded_path extra <<< "${checksum_lines[0]}"
   echo 'Checksum file format is invalid.' >&2
   exit 1
 }
+[[ "$recorded_path" == "$iso_path" ]] || {
+  echo "Checksum file path mismatch: recorded=$recorded_path expected=$iso_path" >&2
+  exit 1
+}
 actual_hash="$(sha256sum "$iso_path")"
 actual_hash=${actual_hash%% *}
 [[ "$actual_hash" == "$expected_hash" ]] || {
