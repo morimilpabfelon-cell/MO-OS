@@ -3,6 +3,7 @@ set -Eeuo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 bodyd="$repo_root/config/includes.chroot/usr/local/sbin/mo-bodyd"
+bodyd_cmd=(python3 "$bodyd")
 workdir="$(mktemp -d)"
 trap 'rm -rf "$workdir"' EXIT
 root="$workdir/root"
@@ -15,11 +16,11 @@ EOF_RELEASE
 export MO_BODYD_ALLOW_TEST_ROOT=1
 
 python3 -m py_compile "$bodyd"
-"$bodyd" --root "$root" init > "$workdir/identity.json"
+"${bodyd_cmd[@]}" --root "$root" init > "$workdir/identity.json"
 openssl genpkey -algorithm ED25519 -out "$workdir/controller-private.pem" >/dev/null 2>&1
 openssl pkey -in "$workdir/controller-private.pem" -pubout \
   -out "$workdir/controller-public.pem" >/dev/null 2>&1
-"$bodyd" --root "$root" pair \
+"${bodyd_cmd[@]}" --root "$root" pair \
   --controller-key "$workdir/controller-public.pem" \
   --instance-id "instance:test-001" \
   --controller-body-id "body:android-001" > "$workdir/pairing.json"
@@ -74,7 +75,7 @@ PY_REQUEST
 
 valid="$workdir/req-001"
 make_request "$valid" req-001 "$executor_id" system.status
-receipt_dir="$("$bodyd" --root "$root" process --bundle "$valid")"
+receipt_dir="$("${bodyd_cmd[@]}" --root "$root" process --bundle "$valid")"
 python3 - "$receipt_dir/receipt.json" <<'PY_VALID_RECEIPT'
 import json
 import pathlib
@@ -92,7 +93,7 @@ openssl pkeyutl -verify -pubin \
   -sigfile "$workdir/receipt.sig.bin" -rawin \
   -in "$receipt_dir/receipt.json" >/dev/null
 
-if "$bodyd" --root "$root" process --bundle "$valid" >/dev/null 2>&1; then
+if "${bodyd_cmd[@]}" --root "$root" process --bundle "$valid" >/dev/null 2>&1; then
   echo 'Replay request was accepted.' >&2
   exit 1
 fi
@@ -112,7 +113,7 @@ path.write_text(
     encoding="utf-8",
 )
 PY_TAMPER
-tampered_receipt="$("$bodyd" --root "$root" process --bundle "$tampered")"
+tampered_receipt="$("${bodyd_cmd[@]}" --root "$root" process --bundle "$tampered")"
 python3 - "$tampered_receipt/receipt.json" <<'PY_REJECTED_RECEIPT'
 import json
 import pathlib
@@ -125,7 +126,7 @@ PY_REJECTED_RECEIPT
 
 wrong_target="$workdir/req-003"
 make_request "$wrong_target" req-003 mo-executor:wrong-target system.status
-wrong_receipt="$("$bodyd" --root "$root" process --bundle "$wrong_target")"
+wrong_receipt="$("${bodyd_cmd[@]}" --root "$root" process --bundle "$wrong_target")"
 python3 - "$wrong_receipt/receipt.json" <<'PY_WRONG_TARGET'
 import json
 import pathlib
@@ -138,7 +139,7 @@ PY_WRONG_TARGET
 
 unsupported="$workdir/req-004"
 make_request "$unsupported" req-004 "$executor_id" shell.execute
-unsupported_receipt="$("$bodyd" --root "$root" process --bundle "$unsupported")"
+unsupported_receipt="$("${bodyd_cmd[@]}" --root "$root" process --bundle "$unsupported")"
 python3 - "$unsupported_receipt/receipt.json" <<'PY_UNSUPPORTED'
 import json
 import pathlib
@@ -151,7 +152,7 @@ PY_UNSUPPORTED
 
 expired="$workdir/req-005"
 make_request "$expired" req-005 "$executor_id" system.status -5
-expired_receipt="$("$bodyd" --root "$root" process --bundle "$expired")"
+expired_receipt="$("${bodyd_cmd[@]}" --root "$root" process --bundle "$expired")"
 python3 - "$expired_receipt/receipt.json" <<'PY_EXPIRED'
 import json
 import pathlib
@@ -162,7 +163,7 @@ assert receipt["status"] == "rejected", receipt
 assert receipt["error"] in {"request_validity_window_invalid", "request_expired"}, receipt
 PY_EXPIRED
 
-"$bodyd" --root "$root" status > "$workdir/status.json"
+"${bodyd_cmd[@]}" --root "$root" status > "$workdir/status.json"
 python3 - "$workdir/status.json" <<'PY_STATUS'
 import json
 import pathlib
