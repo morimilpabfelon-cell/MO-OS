@@ -2,14 +2,16 @@
 set -Eeuo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-dispatch="$repo_root/config/includes.chroot/usr/local/libexec/mo-arch-dispatch"
-worker="$repo_root/config/includes.chroot/usr/local/libexec/mo-arch-worker"
+dispatch="${MO_TEST_DISPATCH:-$repo_root/config/includes.chroot/usr/local/libexec/mo-arch-dispatch}"
+worker="${MO_TEST_WORKER:-$repo_root/config/includes.chroot/usr/local/libexec/mo-arch-worker}"
 workdir="$(mktemp -d)"
 trap 'rm -rf "$workdir"' EXIT
 
 machine_root="$workdir/machines/mo-dev"
+authoritative_worker="$workdir/authoritative/mo-arch-worker"
 fake_machinectl="$workdir/fake-machinectl"
-mkdir -p "$machine_root/usr/local/libexec"
+mkdir -p "$machine_root/usr/local/libexec" "$(dirname "$authoritative_worker")"
+install -m0755 "$worker" "$authoritative_worker"
 install -m0755 "$worker" "$machine_root/usr/local/libexec/mo-arch-worker"
 
 cat > "$fake_machinectl" <<'EOF_MACHINECTL'
@@ -31,15 +33,14 @@ case "${1:-}" in
       printf '%s\n' '{"domain":"arch","kernel_release":"6.12.0-test","machine":"x86_64","os_release":{"ID":"arch","NAME":"Arch Linux","VERSION_ID":"rolling"},"schema_version":"mo.arch.worker.status.v0.1"}'
     fi
     ;;
-  *)
-    exit 64
-    ;;
+  *) exit 64 ;;
 esac
 EOF_MACHINECTL
 chmod 0755 "$fake_machinectl"
 
 export MO_ARCH_DISPATCH_ALLOW_TEST_MODE=1
 export MO_ARCH_DISPATCH_MACHINE_ROOT="$machine_root"
+export MO_ARCH_DISPATCH_WORKER_HOST="$authoritative_worker"
 export MO_ARCH_DISPATCH_MACHINECTL="$fake_machinectl"
 
 status="$(bash "$dispatch" status)"
@@ -65,6 +66,14 @@ if bash "$dispatch" status >/dev/null 2>&1; then
 fi
 unset FAKE_MACHINECTL_MODE
 
+printf '\n# tampered\n' >> "$machine_root/usr/local/libexec/mo-arch-worker"
+if bash "$dispatch" status >"$workdir/tamper.out" 2>"$workdir/tamper.err"; then
+  echo 'Debian dispatcher accepted a modified Arch worker.' >&2
+  exit 1
+fi
+grep -Fq 'arch_worker_integrity_mismatch' "$workdir/tamper.err"
+install -m0755 "$worker" "$machine_root/usr/local/libexec/mo-arch-worker"
+
 rm -rf "$machine_root"
 if bash "$dispatch" status >/dev/null 2>&1; then
   echo 'Debian dispatcher accepted a missing Arch domain.' >&2
@@ -77,4 +86,4 @@ if command -v shellcheck >/dev/null 2>&1; then
   shellcheck "$dispatch" "$worker" "$0"
 fi
 
-printf '%s\n' 'Debian governance and fixed Arch status execution tests passed.'
+printf '%s\n' 'Debian governance, worker integrity and fixed Arch status execution tests passed.'
