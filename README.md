@@ -1,25 +1,27 @@
 # MO OS
 
-MO OS es el sistema de trabajo nativo de Morimil. Está diseñado como una distribución Linux propia para ejecución local soberana, programación, creación de software y operación controlada por la instancia Morimil.
+MO OS es el sistema de trabajo nativo de Morimil. Está diseñado como una distribución Linux híbrida propia para ejecución local soberana, programación, creación de software y operación controlada por la instancia Morimil.
 
 ## Arquitectura
 
 - **Dominio estable:** Debian para arranque, kernel, hardware, red, seguridad, identidad técnica y recuperación.
-- **Dominio de desarrollo:** Arch Linux dentro de `systemd-nspawn` para compiladores, motores y herramientas recientes.
-- **Capa MO:** comandos, políticas, construcción, instalación y frontera de ejecución de Morimil.
+- **Dominio de trabajo:** Arch Linux dentro de `systemd-nspawn` para compiladores, motores y herramientas recientes.
+- **Capa MO:** comandos, políticas, construcción, instalación y coordinación entre Debian y Arch.
 
 Para Morimil es un solo sistema. `apt` y `pacman` nunca administran la misma raíz. Debian gobierna el sistema; Arch ejecuta trabajo dentro de una frontera subordinada.
+
+MO OS permanece Linux nativo y puro en su composición. No incorpora Android, Android SDK, APK, Jetpack, Room ni dependencias móviles. Morimil-app controla el sistema desde fuera mediante una frontera criptográfica neutral; el transporte o cliente que entregue una solicitud no se integra en la raíz Debian ni en el dominio Arch.
 
 ## Estado actual
 
 **Alpha 0.6 — Morimil Executor Foundation (`0.6.0-alpha.1`)**
 
-Esta fase conserva la instalación virtual cifrada, snapshots, rollback, actualizaciones firmadas y Secure Boot UKI de Alpha 0.5, y añade la primera frontera nativa de trabajo controlada por Morimil-app:
+Esta fase conserva la instalación virtual cifrada, snapshots, rollback, actualizaciones firmadas y Secure Boot UKI de Alpha 0.5, y añade la primera frontera nativa de trabajo controlada externamente por Morimil:
 
-- Servicio `mo-bodyd` ejecutado por Debian.
+- Servicio Linux nativo `mo-bodyd` ejecutado por Debian.
 - Identidad Ed25519 local del executor usada únicamente para firmar recibos.
-- Emparejamiento exclusivo con una instancia Morimil y un Body Android controlador.
-- Solicitudes JSON canónicas firmadas por el Body controlador.
+- Emparejamiento exclusivo con una instancia Morimil y una autoridad de control registrada.
+- Solicitudes JSON canónicas firmadas por la autoridad de control.
 - Verificación exacta de `instance_id`, `controller_body_id` y `target_executor_id`.
 - Ventana máxima de validez de cinco minutos.
 - Protección atómica contra replay mediante `request_id`.
@@ -34,26 +36,33 @@ La operación inicial permitida es únicamente:
 system.status
 ```
 
-Alpha 0.6 no permite comandos arbitrarios, escritura de memoria canónica, acceso a dispositivos, red, archivos protegidos ni ejecución dentro de Arch. Morimil-app conserva todo el control y sigue siendo la autoridad exclusiva de solicitudes.
+Alpha 0.6 no permite comandos arbitrarios, escritura de memoria canónica, acceso a dispositivos, red, archivos protegidos ni ejecución dentro de Arch. Morimil conserva todo el control y sigue siendo la autoridad exclusiva de solicitudes.
 
-## Relación con Morimil
+## Frontera externa de control
 
 ```text
-Morimil-app
-  Body Android controlador
-  identidad, memoria y autoridad
+Morimil-app / autoridad Morimil
+  fuera de MO OS
+  identidad, memoria y decisión
           |
           | solicitud Ed25519 firmada
           v
-MO OS / mo-bodyd
-  executor subordinado
+MO OS / Debian / mo-bodyd
+  valida autoridad y política
+          |
+          | operación Linux permitida
+          v
+Arch Linux subordinado
+  futuro dominio de ejecución aislada
           |
           | recibo Ed25519 firmado
           v
-Morimil-app verifica el resultado
+Morimil verifica el resultado
 ```
 
 La clave del executor declara autoridad `receipt_signing_only`. No puede concederse permisos, modificar la identidad de Morimil ni convertirse en escritor de memoria canónica.
+
+El contrato de solicitudes es neutral y no instala componentes del cliente dentro de MO OS. Morimil-app puede producir solicitudes compatibles, pero Android permanece completamente fuera del sistema operativo.
 
 ## Inicialización del executor
 
