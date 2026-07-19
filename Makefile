@@ -1,4 +1,4 @@
-.PHONY: help check configure iso verify boot-test secure-boot-test install-test update-test executor-test arch-dispatch-test run clean
+.PHONY: help check version-check configure iso verify boot-test secure-boot-test install-test update-test executor-test arch-dispatch-test run clean
 
 SHELL := /bin/bash
 ISO := artifacts/mo-os-alpha-0.6-amd64.iso
@@ -6,7 +6,8 @@ ISO := artifacts/mo-os-alpha-0.6-amd64.iso
 help:
 	@printf '%s\n' \
 	  'MO OS build commands' \
-	  '  make check               Static validation' \
+	  '  make check               Static and version consistency validation' \
+	  '  make version-check       Verify release, ISO and CI version agreement' \
 	  '  make configure           Generate live-build state' \
 	  '  sudo make iso            Build the bootable ISO' \
 	  '  make verify              Inspect and hash the ISO' \
@@ -21,6 +22,10 @@ help:
 
 check:
 	@bash tests/static-checks.sh
+	@bash tests/version-consistency.sh
+
+version-check:
+	@bash tests/version-consistency.sh
 
 configure:
 	@bash build/configure.sh
@@ -51,7 +56,7 @@ arch-dispatch-test:
 	@bash tests/arch-dispatch.sh
 
 run:
-	@test -f "$(ISO)" || { echo "Missing $(ISO). Build it first." >&2; exit 1; }
+	@test -f "$(ISO)" || { echo 'Missing $(ISO). Build it first.' >&2; exit 1; }
 	@command -v qemu-system-x86_64 >/dev/null || { echo 'qemu-system-x86_64 is required.' >&2; exit 1; }
 	@qemu-system-x86_64 -enable-kvm -m 4096 -smp 4 -cdrom "$(ISO)" -boot d
 
