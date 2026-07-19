@@ -18,8 +18,16 @@ cat > "$fake_machinectl" <<'EOF_MACHINECTL'
 #!/usr/bin/env bash
 set -Eeuo pipefail
 case "${1:-}" in
-  start)
-    [[ $# -eq 2 && "$2" == mo-dev ]]
+  show)
+    [[ $# -eq 4 ]]
+    [[ "$2" == mo-dev ]]
+    [[ "$3" == --property=State ]]
+    [[ "$4" == --value ]]
+    if [[ ${FAKE_MACHINECTL_MODE:-valid} == stopped ]]; then
+      printf '%s\n' 'dead'
+    else
+      printf '%s\n' 'running'
+    fi
     ;;
   shell)
     [[ $# -eq 5 ]]
@@ -57,6 +65,15 @@ if bash "$dispatch" shell.execute >/dev/null 2>&1; then
   echo 'Debian dispatcher accepted an arbitrary operation.' >&2
   exit 1
 fi
+
+FAKE_MACHINECTL_MODE=stopped
+export FAKE_MACHINECTL_MODE
+if bash "$dispatch" status >"$workdir/stopped.out" 2>"$workdir/stopped.err"; then
+  echo 'arch.status started or accepted a stopped Arch domain.' >&2
+  exit 1
+fi
+grep -Fq 'arch_domain_not_running' "$workdir/stopped.err"
+unset FAKE_MACHINECTL_MODE
 
 FAKE_MACHINECTL_MODE=malformed
 export FAKE_MACHINECTL_MODE
@@ -98,4 +115,4 @@ if command -v shellcheck >/dev/null 2>&1; then
   shellcheck "$dispatch" "$worker" "$0"
 fi
 
-printf '%s\n' 'Debian governance, canonical paths, worker integrity and fixed Arch status execution tests passed.'
+printf '%s\n' 'Debian governance, running-state, canonical paths and fixed Arch status execution tests passed.'
