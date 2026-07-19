@@ -49,14 +49,14 @@ actual_hash=${actual_hash%% *}
 metadata="$(xorriso -indev "$iso_path" -pvd_info 2>&1)"
 
 extract_pvd_field() {
-  local field=$1
-  local pattern="^[[:space:]]*${field}[[:space:]]+Id[[:space:]]*:"
+  local label=$1
+  local pattern="^[[:space:]]*${label}[[:space:]]*:"
   local value
   local -a matches=()
 
-  mapfile -t matches < <(grep -Ei "$pattern" <<< "$metadata" || true)
+  mapfile -t matches < <(grep -E "$pattern" <<< "$metadata" || true)
   ((${#matches[@]} == 1)) || {
-    echo "ISO metadata field missing or duplicated: field=$field matches=${#matches[@]}" >&2
+    echo "ISO metadata field missing or duplicated: field=$label matches=${#matches[@]}" >&2
     printf '%s\n' "$metadata" >&2
     exit 1
   }
@@ -64,25 +64,25 @@ extract_pvd_field() {
   value=${matches[0]#*:}
   value="$(sed -E "s/^[[:space:]]*'//; s/'[[:space:]]*$//; s/^[[:space:]]+//; s/[[:space:]]+$//" <<< "$value")"
   [[ -n "$value" ]] || {
-    echo "ISO metadata field is empty: field=$field" >&2
+    echo "ISO metadata field is empty: field=$label" >&2
     exit 1
   }
   printf '%s\n' "$value"
 }
 
 assert_pvd_field() {
-  local field=$1 expected=$2 actual
-  actual="$(extract_pvd_field "$field")"
+  local label=$1 expected=$2 actual
+  actual="$(extract_pvd_field "$label")"
   [[ "${actual^^}" == "${expected^^}" ]] || {
-    echo "ISO metadata mismatch: field=$field expected=$expected actual=$actual" >&2
+    echo "ISO metadata mismatch: field=$label expected=$expected actual=$actual" >&2
     printf '%s\n' "$metadata" >&2
     exit 1
   }
 }
 
-assert_pvd_field Volume 'MO_OS_ALPHA_06'
-assert_pvd_field Application 'MO OS Alpha 0.6 Morimil Executor'
-assert_pvd_field Publisher 'MO OS Project'
+assert_pvd_field 'Volume Id' 'MO_OS_ALPHA_06'
+assert_pvd_field 'App Id' 'MO OS Alpha 0.6 Morimil Executor'
+assert_pvd_field 'Publisher Id' 'MO OS Project'
 
 printf 'ISO_SHA256=%s\n' "$actual_hash"
 printf '%s\n' "$metadata"
