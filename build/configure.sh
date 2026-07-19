@@ -9,6 +9,16 @@ command -v lb >/dev/null 2>&1 || {
   exit 1
 }
 
+for native_helper in \
+  config/includes.chroot/usr/local/libexec/mo-arch-dispatch \
+  config/includes.chroot/usr/local/libexec/mo-arch-worker; do
+  [[ -f "$native_helper" ]] || {
+    echo "Missing MO native helper: $native_helper" >&2
+    exit 1
+  }
+  chmod 0755 "$native_helper"
+done
+
 lb config noauto \
   --mode debian \
   --distribution trixie \
