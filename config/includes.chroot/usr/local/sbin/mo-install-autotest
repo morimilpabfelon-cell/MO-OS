@@ -19,8 +19,10 @@ read_release_version() {
   return 1
 }
 
-readonly mo_version="$(read_release_version)"
-readonly ci_passphrase="mo-os-${mo_version}-ci-only"
+mo_version="$(read_release_version)"
+readonly mo_version
+ci_passphrase="mo-os-${mo_version}-ci-only"
+readonly ci_passphrase
 
 read_token() {
   local path value
