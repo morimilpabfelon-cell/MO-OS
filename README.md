@@ -1,38 +1,88 @@
 # MO OS
 
-MO OS es una distribución Linux propia en desarrollo para programación, creación de software y operación local soberana.
+MO OS es el sistema de trabajo nativo de Morimil. Está diseñado como una distribución Linux propia para ejecución local soberana, programación, creación de software y operación controlada por la instancia Morimil.
 
 ## Arquitectura
 
-- **Dominio estable:** Debian para arranque, kernel, hardware, red, seguridad y recuperación.
-- **Dominio de desarrollo:** Arch Linux dentro de `systemd-nspawn` para compiladores y herramientas recientes.
-- **Capa MO:** comandos, políticas, construcción, instalación y experiencia unificada.
+- **Dominio estable:** Debian para arranque, kernel, hardware, red, seguridad, identidad técnica y recuperación.
+- **Dominio de desarrollo:** Arch Linux dentro de `systemd-nspawn` para compiladores, motores y herramientas recientes.
+- **Capa MO:** comandos, políticas, construcción, instalación y frontera de ejecución de Morimil.
 
-Para el usuario es un solo sistema. `apt` y `pacman` nunca administran la misma raíz.
+Para Morimil es un solo sistema. `apt` y `pacman` nunca administran la misma raíz. Debian gobierna el sistema; Arch ejecuta trabajo dentro de una frontera subordinada.
 
 ## Estado actual
 
-**Alpha 0.5 — Secure Boot UKI Foundation (`0.5.0-alpha.2`)**
+**Alpha 0.6 — Morimil Executor Foundation (`0.6.0-alpha.1`)**
 
-Esta fase conserva las actualizaciones firmadas de Alpha 0.5.1 y añade una cadena de arranque confiable virtual:
+Esta fase conserva la instalación virtual cifrada, snapshots, rollback, actualizaciones firmadas y Secure Boot UKI de Alpha 0.5, y añade la primera frontera nativa de trabajo controlada por Morimil-app:
 
-- Extracción del kernel y del initramfs reales desde la ISO de MO OS.
-- Construcción de una Unified Kernel Image mediante `ukify`.
-- Firma temporal RSA-3072/SHA-256 del UKI.
-- Enrolamiento temporal de PK, KEK y `db` dentro de una variable store OVMF nueva.
-- Arranque bajo OVMF con Secure Boot y SMM activados.
-- Aceptación obligatoria del UKI firmado hasta alcanzar `MO_OS_BOOT_READY`.
-- Rechazo obligatorio del mismo UKI sin firma.
-- Rechazo obligatorio del UKI firmado después de modificar un byte.
-- Eliminación de la clave privada temporal al finalizar cada ejecución.
+- Servicio `mo-bodyd` ejecutado por Debian.
+- Identidad Ed25519 local del executor usada únicamente para firmar recibos.
+- Emparejamiento exclusivo con una instancia Morimil y un Body Android controlador.
+- Solicitudes JSON canónicas firmadas por el Body controlador.
+- Verificación exacta de `instance_id`, `controller_body_id` y `target_executor_id`.
+- Ventana máxima de validez de cinco minutos.
+- Protección atómica contra replay mediante `request_id`.
+- Lista local y cerrada de operaciones permitidas.
+- Recibos JSON firmados por el executor.
+- Journal local append-only de eventos de seguridad.
+- Servicio systemd sin capacidades Linux y con filesystem del sistema protegido.
 
-Las actualizaciones continúan protegidas mediante:
+La operación inicial permitida es únicamente:
 
-- Verificación RSA-SHA256 del manifiesto.
-- SHA-256 obligatorio del payload.
-- Secuencia monotónica contra replay y downgrade.
-- Snapshot Btrfs de solo lectura antes de aplicar cambios.
-- Lista estricta de rutas y límites de tamaño.
+```text
+system.status
+```
+
+Alpha 0.6 no permite comandos arbitrarios, escritura de memoria canónica, acceso a dispositivos, red, archivos protegidos ni ejecución dentro de Arch. Morimil-app conserva todo el control y sigue siendo la autoridad exclusiva de solicitudes.
+
+## Relación con Morimil
+
+```text
+Morimil-app
+  Body Android controlador
+  identidad, memoria y autoridad
+          |
+          | solicitud Ed25519 firmada
+          v
+MO OS / mo-bodyd
+  executor subordinado
+          |
+          | recibo Ed25519 firmado
+          v
+Morimil-app verifica el resultado
+```
+
+La clave del executor declara autoridad `receipt_signing_only`. No puede concederse permisos, modificar la identidad de Morimil ni convertirse en escritor de memoria canónica.
+
+## Inicialización del executor
+
+```bash
+sudo mo executor init
+sudo mo executor pair \
+  --controller-key morimil-controller-public.pem \
+  --instance-id INSTANCE_ID \
+  --controller-body-id BODY_ID
+mo executor status
+```
+
+El emparejamiento es único y fail-closed durante esta fase. Al completarse, se habilita `mo-bodyd.service`.
+
+La especificación completa está en `docs/MORIMIL-EXECUTOR.md`.
+
+## Secure Boot y actualizaciones
+
+La cadena virtual conserva:
+
+- extracción del kernel y del initramfs reales desde la ISO;
+- construcción de una Unified Kernel Image mediante `ukify`;
+- firma temporal RSA-3072/SHA-256 del UKI;
+- aceptación del UKI firmado bajo OVMF Secure Boot;
+- rechazo del UKI sin firma o modificado;
+- actualización firmada con secuencia monotónica;
+- snapshot Btrfs previo a cada actualización permitida.
+
+Las claves de Secure Boot y actualización siguen siendo efímeras de CI. No son claves de producción.
 
 ## Raíz cifrada y recuperación
 
@@ -48,18 +98,6 @@ GPT
 ```
 
 `@home` permanece separado del rollback de la raíz. La recuperación crea una copia de seguridad de la raíz actual antes de restaurar el snapshot seleccionado.
-
-## Frontera de confianza
-
-Las claves privadas de actualizaciones y Secure Boot no deben entrar al repositorio, ISO, sistema instalado, bundle ni artefactos.
-
-La futura clave pública de actualizaciones se ubicará en:
-
-```text
-/etc/mo/trust/update-public.pem
-```
-
-Alpha 0.5 usa claves efímeras generadas por CI. Esto demuestra la cadena criptográfica, pero todavía no define custodia, rotación, revocación ni claves de producción.
 
 ## Instalación virtual cifrada
 
@@ -82,6 +120,7 @@ El instalador rechaza discos físicos, `/dev/sda`, NVMe, entornos no virtualizad
 sudo apt-get update
 sudo apt-get install -y live-build debootstrap xorriso squashfs-tools shellcheck make
 make check
+make executor-test
 sudo make update-test
 sudo make iso
 ```
@@ -89,17 +128,20 @@ sudo make iso
 La imagen resultante aparece en:
 
 ```text
-artifacts/mo-os-alpha-0.5-amd64.iso
+artifacts/mo-os-alpha-0.6-amd64.iso
 ```
 
 ## Pruebas
 
 ```bash
+make executor-test
 make boot-test
 make secure-boot-test
 sudo make update-test
 make install-test
 ```
+
+`executor-test` genera claves Ed25519 temporales y comprueba una solicitud válida, la firma del recibo, replay, manipulación, destino incorrecto, operación no permitida y expiración.
 
 `secure-boot-test` construye un UKI desde el kernel y el initramfs de la ISO, firma el UKI, enrola una variable store OVMF desechable, exige un arranque válido y comprueba el rechazo de las variantes sin firma y alterada.
 
@@ -113,6 +155,12 @@ mo doctor
 mo dev-init
 mo dev
 mo dev-status
+mo executor init
+mo executor pair --controller-key FILE --instance-id ID --controller-body-id ID
+mo executor status
+mo executor process --bundle DIRECTORIO
+mo executor start
+mo executor stop
 mo snapshot create NOMBRE
 mo snapshot list
 mo recovery rollback --virtual --firmware uefi --disk /dev/vda --snapshot NOMBRE
@@ -121,4 +169,4 @@ mo update apply --bundle DIRECTORIO
 mo update status
 ```
 
-La instalación sobre hardware real permanecerá bloqueada hasta validar claves de producción, rotación y revocación, recuperación ante actualizaciones interrumpidas, copias externas y una matriz del hardware específico de la laptop.
+La instalación sobre hardware real permanecerá bloqueada hasta validar claves de producción, rotación y revocación, recuperación ante actualizaciones interrumpidas, copias externas y una matriz del hardware específico de la computadora objetivo.
