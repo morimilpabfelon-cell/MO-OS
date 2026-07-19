@@ -23,7 +23,7 @@ openssl pkey -in "$workdir/controller-private.pem" -pubout \
 "${bodyd_cmd[@]}" --root "$root" pair \
   --controller-key "$workdir/controller-public.pem" \
   --instance-id "instance:test-001" \
-  --controller-body-id "body:android-001" > "$workdir/pairing.json"
+  --controller-body-id "controller:morimil-001" > "$workdir/pairing.json"
 
 executor_id="$(python3 - "$root" <<'PY_EXECUTOR_ID'
 import json
@@ -51,7 +51,7 @@ request = {
     "schema_version": "morimil.executor.request.v0.1",
     "request_id": request_id,
     "instance_id": "instance:test-001",
-    "controller_body_id": "body:android-001",
+    "controller_body_id": "controller:morimil-001",
     "target_executor_id": target,
     "operation": operation,
     "issued_at": format_time(now),
@@ -173,6 +173,7 @@ status = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
 assert status["identity_initialized"] is True
 assert status["controller_paired"] is True
 assert status["instance_id"] == "instance:test-001"
+assert status["controller_body_id"] == "controller:morimil-001"
 PY_STATUS
 
 echo 'MO OS Morimil executor signature, authority, replay and receipt tests passed.'
