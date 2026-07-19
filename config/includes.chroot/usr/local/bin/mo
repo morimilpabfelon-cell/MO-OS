@@ -12,15 +12,24 @@ Usage: mo <command> [options]
 
 Commands:
   status      Show MO OS, encryption and filesystem status
-  doctor      Validate the terminal, recovery and trust foundation
+  doctor      Validate the terminal, recovery, trust and executor foundation
   dev-init    Create the pinned Arch development domain
   dev         Open a shell in the Arch development domain
   dev-status  Show development-domain status
+  executor    Initialize, pair and inspect the Morimil-controlled executor
   install     Install only to an authorized disposable virtual disk
   snapshot    Create or list read-only Btrfs root snapshots
   recovery    Roll back an encrypted virtual installation from the live ISO
   update      Verify, apply or inspect signed MO OS updates
   help        Show this help
+
+Morimil-controlled executor:
+  mo executor init
+  mo executor pair --controller-key FILE --instance-id ID --controller-body-id ID
+  mo executor status
+  mo executor process --bundle DIR
+  mo executor start
+  mo executor stop
 
 Encrypted UEFI virtual installer:
   mo install --virtual --firmware uefi --disk /dev/vda --erase --username NAME
@@ -61,7 +70,7 @@ doctor() {
   for command_name in \
     bash blkid blockdev btrfs chroot cryptsetup curl findmnt git grub-install \
     lsblk machinectl mkfs.btrfs mkfs.ext4 mkfs.vfat mount openssl parted python3 \
-    rsync sha256sum systemd-nspawn tar update-grub wipefs zstd; do
+    rsync sha256sum systemctl systemd-nspawn tar update-grub wipefs zstd; do
     if command -v "$command_name" >/dev/null 2>&1; then
       printf '[ok] %s\n' "$command_name"
     else
@@ -70,17 +79,21 @@ doctor() {
     fi
   done
   [[ -r "$release_file" ]] || { echo '[missing] /etc/mo-release' >&2; failures=$((failures + 1)); }
-  for helper in mo-install mo-recovery mo-snapshot mo-update; do
+  for helper in mo-bodyd mo-install mo-recovery mo-snapshot mo-update; do
     [[ -r "/usr/local/sbin/$helper" ]] || {
       echo "[missing] $helper" >&2
       failures=$((failures + 1))
     }
   done
+  [[ -r /etc/systemd/system/mo-bodyd.service ]] || {
+    echo '[missing] mo-bodyd.service' >&2
+    failures=$((failures + 1))
+  }
   if ((failures > 0)); then
     echo "MO OS has $failures missing requirement(s)." >&2
     return 1
   fi
-  echo 'MO OS encrypted recovery and signed-update foundation is healthy.'
+  echo 'MO OS encrypted recovery, signed updates and Morimil executor foundation is healthy.'
 }
 
 dev_init() {
@@ -102,6 +115,37 @@ dev_status() {
   else
     echo 'Arch development domain: not initialized'
   fi
+}
+
+executor() {
+  shift
+  case "${1:-status}" in
+    init)
+      exec sudo /usr/bin/python3 /usr/local/sbin/mo-bodyd init
+      ;;
+    pair)
+      shift
+      sudo /usr/bin/python3 /usr/local/sbin/mo-bodyd pair "$@"
+      sudo systemctl enable --now mo-bodyd.service
+      ;;
+    status)
+      exec /usr/bin/python3 /usr/local/sbin/mo-bodyd status
+      ;;
+    process)
+      shift
+      exec sudo /usr/bin/python3 /usr/local/sbin/mo-bodyd process "$@"
+      ;;
+    start)
+      exec sudo systemctl start mo-bodyd.service
+      ;;
+    stop)
+      exec sudo systemctl stop mo-bodyd.service
+      ;;
+    *)
+      echo 'Usage: mo executor {init|pair|status|process|start|stop} [options]' >&2
+      exit 2
+      ;;
+  esac
 }
 
 install() {
@@ -141,6 +185,7 @@ case "${1:-help}" in
   dev-init) dev_init ;;
   dev) dev_shell ;;
   dev-status) dev_status ;;
+  executor) executor "$@" ;;
   install) install "$@" ;;
   snapshot) snapshot "$@" ;;
   recovery) recovery "$@" ;;
