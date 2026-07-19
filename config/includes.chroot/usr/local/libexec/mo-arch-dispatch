@@ -8,25 +8,24 @@ readonly worker_inside=/usr/local/libexec/mo-arch-worker
 readonly action=${1:-}
 
 machine_root=/var/lib/machines/mo-dev
+worker_host=/usr/local/libexec/mo-arch-worker
 machinectl_cmd=/usr/bin/machinectl
 timeout_cmd=/usr/bin/timeout
+sha256sum_cmd=/usr/bin/sha256sum
 
 if [[ ${MO_ARCH_DISPATCH_ALLOW_TEST_MODE:-0} == 1 ]]; then
   machine_root=${MO_ARCH_DISPATCH_MACHINE_ROOT:-$machine_root}
+  worker_host=${MO_ARCH_DISPATCH_WORKER_HOST:-$worker_host}
   machinectl_cmd=${MO_ARCH_DISPATCH_MACHINECTL:-$machinectl_cmd}
-  case "$machine_root" in
-    /tmp/*|/mnt/*) ;;
-    *) echo 'arch_test_machine_root_invalid' >&2; exit 1 ;;
-  esac
-  case "$machinectl_cmd" in
-    /tmp/*|/mnt/*) ;;
-    *) echo 'arch_test_machinectl_invalid' >&2; exit 1 ;;
-  esac
-else
-  if [[ ${EUID:-$(id -u)} -ne 0 ]]; then
-    echo 'arch_dispatch_requires_root' >&2
-    exit 1
-  fi
+  for test_path in "$machine_root" "$worker_host" "$machinectl_cmd"; do
+    case "$test_path" in
+      /tmp/*|/mnt/*) ;;
+      *) echo 'arch_test_path_invalid' >&2; exit 1 ;;
+    esac
+  done
+elif [[ ${EUID:-$(id -u)} -ne 0 ]]; then
+  echo 'arch_dispatch_requires_root' >&2
+  exit 1
 fi
 
 if [[ $# -ne 1 || "$action" != status ]]; then
@@ -34,20 +33,33 @@ if [[ $# -ne 1 || "$action" != status ]]; then
   exit 2
 fi
 
-[[ -d "$machine_root" ]] || {
+[[ -d "$machine_root" && ! -L "$machine_root" ]] || {
   echo 'arch_domain_not_initialized' >&2
   exit 1
 }
-[[ -x "$machine_root$worker_inside" ]] || {
+[[ -f "$worker_host" && ! -L "$worker_host" && -x "$worker_host" ]] || {
+  echo 'arch_authoritative_worker_missing' >&2
+  exit 1
+}
+[[ -f "$machine_root$worker_inside" && ! -L "$machine_root$worker_inside" && -x "$machine_root$worker_inside" ]] || {
   echo 'arch_worker_missing' >&2
   exit 1
 }
-[[ -x "$machinectl_cmd" ]] || {
-  echo 'machinectl_missing' >&2
+for required_command in "$machinectl_cmd" "$timeout_cmd" "$sha256sum_cmd"; do
+  [[ -x "$required_command" ]] || {
+    echo "arch_dispatch_dependency_missing:${required_command}" >&2
+    exit 1
+  }
+done
+
+host_worker_sha="$($sha256sum_cmd "$worker_host" | awk '{print $1}')"
+domain_worker_sha="$($sha256sum_cmd "$machine_root$worker_inside" | awk '{print $1}')"
+[[ "$host_worker_sha" =~ ^[0-9a-f]{64}$ && "$domain_worker_sha" =~ ^[0-9a-f]{64}$ ]] || {
+  echo 'arch_worker_digest_invalid' >&2
   exit 1
 }
-[[ -x "$timeout_cmd" ]] || {
-  echo 'timeout_missing' >&2
+[[ "$host_worker_sha" == "$domain_worker_sha" ]] || {
+  echo 'arch_worker_integrity_mismatch' >&2
   exit 1
 }
 
