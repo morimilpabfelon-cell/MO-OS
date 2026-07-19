@@ -17,30 +17,36 @@ set -Eeuo pipefail
 case "${FAKE_XORRISO_MODE:-valid}" in
   valid)
     cat <<'EOF_METADATA'
-Volume Id      : 'MO_OS_ALPHA_06'
-Application Id : 'MO OS ALPHA 0.6 MORIMIL EXECUTOR'
-Publisher Id   : 'MO OS PROJECT'
+Volume id    : 'MO_OS_ALPHA_06'
+Drive current: -indev 'fixture.iso'
+PVD address  : 16s
+Volume Id    : MO_OS_ALPHA_06
+Publisher Id : MO OS PROJECT
+App Id       : MO OS ALPHA 0.6 MORIMIL EXECUTOR
 EOF_METADATA
     ;;
   missing-metadata)
     cat <<'EOF_METADATA'
-Volume Id      : 'MO_OS_ALPHA_06'
-Publisher Id   : 'MO OS PROJECT'
+Volume id    : 'MO_OS_ALPHA_06'
+Volume Id    : MO_OS_ALPHA_06
+Publisher Id : MO OS PROJECT
 EOF_METADATA
     ;;
   wrong-application)
     cat <<'EOF_METADATA'
-Volume Id      : 'MO_OS_ALPHA_06'
-Application Id : 'DEBIAN LIVE'
-Publisher Id   : 'MO OS PROJECT'
+Volume id    : 'MO_OS_ALPHA_06'
+Volume Id    : MO_OS_ALPHA_06
+Publisher Id : MO OS PROJECT
+App Id       : DEBIAN LIVE
 EOF_METADATA
     ;;
   duplicate-volume)
     cat <<'EOF_METADATA'
-Volume Id      : 'MO_OS_ALPHA_06'
-Volume Id      : 'MO_OS_ALPHA_06'
-Application Id : 'MO OS ALPHA 0.6 MORIMIL EXECUTOR'
-Publisher Id   : 'MO OS PROJECT'
+Volume id    : 'MO_OS_ALPHA_06'
+Volume Id    : MO_OS_ALPHA_06
+Volume Id    : MO_OS_ALPHA_06
+Publisher Id : MO OS PROJECT
+App Id       : MO OS ALPHA 0.6 MORIMIL EXECUTOR
 EOF_METADATA
     ;;
   *) exit 64 ;;
@@ -80,7 +86,7 @@ if bash "$verifier" "$iso" >"$workdir/missing.out" 2>"$workdir/missing.err"; the
   echo 'ISO verifier accepted a missing PVD field.' >&2
   exit 1
 fi
-grep -Fq 'ISO metadata field missing or duplicated: field=Application matches=0' "$workdir/missing.err"
+grep -Fq 'ISO metadata field missing or duplicated: field=App Id matches=0' "$workdir/missing.err"
 
 FAKE_XORRISO_MODE=wrong-application
 export FAKE_XORRISO_MODE
@@ -88,7 +94,7 @@ if bash "$verifier" "$iso" >"$workdir/value.out" 2>"$workdir/value.err"; then
   echo 'ISO verifier accepted an incorrect PVD field value.' >&2
   exit 1
 fi
-grep -Fq 'ISO metadata mismatch: field=Application' "$workdir/value.err"
+grep -Fq 'ISO metadata mismatch: field=App Id' "$workdir/value.err"
 
 FAKE_XORRISO_MODE=duplicate-volume
 export FAKE_XORRISO_MODE
@@ -96,7 +102,7 @@ if bash "$verifier" "$iso" >"$workdir/duplicate.out" 2>"$workdir/duplicate.err";
   echo 'ISO verifier accepted a duplicated PVD field.' >&2
   exit 1
 fi
-grep -Fq 'ISO metadata field missing or duplicated: field=Volume matches=2' "$workdir/duplicate.err"
+grep -Fq 'ISO metadata field missing or duplicated: field=Volume Id matches=2' "$workdir/duplicate.err"
 unset FAKE_XORRISO_MODE
 
-printf '%s\n' 'ISO checksum path, digest and exact PVD field tests passed.'
+printf '%s\n' 'ISO checksum path, digest and exact xorriso PVD field tests passed.'
