@@ -8,7 +8,7 @@ MO OS es el sistema de trabajo nativo de Morimil. Está diseñado como una distr
 - **Dominio de trabajo:** Arch Linux dentro de `systemd-nspawn` para compiladores, motores y herramientas recientes.
 - **Capa MO:** comandos, políticas, construcción, instalación y coordinación entre Debian y Arch.
 
-Para Morimil es un solo sistema. `apt` y `pacman` nunca administran la misma raíz. Debian gobierna el sistema; Arch ejecuta trabajo dentro de una frontera subordinada.
+Para Morimil es un solo sistema. `apt` y `pacman` nunca administran la misma raíz. **Debian gobierna el sistema; Arch ejecuta trabajo dentro de una frontera subordinada.**
 
 MO OS permanece Linux nativo y puro en su composición. No incorpora Android, Android SDK, APK, Jetpack, Room ni dependencias móviles. Morimil-app controla el sistema desde fuera mediante una frontera criptográfica neutral; el transporte o cliente que entregue una solicitud no se integra en la raíz Debian ni en el dominio Arch.
 
@@ -26,17 +26,20 @@ Esta fase conserva la instalación virtual cifrada, snapshots, rollback, actuali
 - Ventana máxima de validez de cinco minutos.
 - Protección atómica contra replay mediante `request_id`.
 - Lista local y cerrada de operaciones permitidas.
+- `mo-arch-dispatch` en Debian como única puerta hacia Arch.
+- `mo-arch-worker` dentro de Arch con una interfaz fija.
 - Recibos JSON firmados por el executor.
 - Journal local append-only de eventos de seguridad.
 - Servicio systemd sin capacidades Linux y con filesystem del sistema protegido.
 
-La operación inicial permitida es únicamente:
+Las operaciones actuales son:
 
 ```text
-system.status
+system.status  — ejecutada localmente y gobernada por Debian
+arch.status    — autorizada por Debian y ejecutada por el worker fijo de Arch
 ```
 
-Alpha 0.6 no permite comandos arbitrarios, escritura de memoria canónica, acceso a dispositivos, red, archivos protegidos ni ejecución dentro de Arch. Morimil conserva todo el control y sigue siendo la autoridad exclusiva de solicitudes.
+Ambas operaciones exigen parámetros vacíos. Alpha 0.6 no permite comandos arbitrarios, escritura de memoria canónica, acceso autónomo a red, dispositivos, GPU ni archivos protegidos. La única ejecución habilitada dentro de Arch es la lectura estructurada de estado mediante `arch.status`.
 
 ## Frontera externa de control
 
@@ -48,14 +51,20 @@ Morimil-app / autoridad Morimil
           | solicitud Ed25519 firmada
           v
 MO OS / Debian / mo-bodyd
-  valida autoridad y política
+  valida autoridad, destino, tiempo y replay
           |
-          | operación Linux permitida
+          | arch.status autorizado
           v
-Arch Linux subordinado
-  futuro dominio de ejecución aislada
+Debian / mo-arch-dispatch
+  permite únicamente status y aplica timeout
           |
-          | recibo Ed25519 firmado
+          v
+Arch / mo-arch-worker
+  produce evidencia estructurada
+          |
+          v
+Debian valida la evidencia y firma el recibo
+          |
           v
 Morimil verifica el resultado
 ```
@@ -130,6 +139,7 @@ sudo apt-get update
 sudo apt-get install -y live-build debootstrap xorriso squashfs-tools shellcheck make
 make check
 make executor-test
+make arch-dispatch-test
 sudo make update-test
 sudo make iso
 ```
@@ -144,13 +154,16 @@ artifacts/mo-os-alpha-0.6-amd64.iso
 
 ```bash
 make executor-test
+make arch-dispatch-test
 make boot-test
 make secure-boot-test
 sudo make update-test
 make install-test
 ```
 
-`executor-test` genera claves Ed25519 temporales y comprueba una solicitud válida, la firma del recibo, replay, manipulación, destino incorrecto, operación no permitida y expiración.
+`executor-test` genera claves Ed25519 temporales y comprueba firmas, recibos, replay, manipulación, destino incorrecto, operación no permitida, expiración y una solicitud firmada `arch.status`. También rechaza parámetros y evidencia que no represente un dominio Arch válido.
+
+`arch-dispatch-test` comprueba que Debian solo permita el verbo fijo `status`, rechace una operación arbitraria, valide la evidencia del worker y falle si el dominio Arch no existe.
 
 `secure-boot-test` construye un UKI desde el kernel y el initramfs de la ISO, firma el UKI, enrola una variable store OVMF desechable, exige un arranque válido y comprueba el rechazo de las variantes sin firma y alterada.
 
