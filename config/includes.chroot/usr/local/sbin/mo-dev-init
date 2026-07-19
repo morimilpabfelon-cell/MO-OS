@@ -19,7 +19,7 @@ fi
   echo "$target already exists; refusing to overwrite it." >&2
   exit 1
 }
-[[ -r "$worker_source" ]] || {
+[[ -f "$worker_source" && ! -L "$worker_source" && -x "$worker_source" ]] || {
   echo "Missing governed Arch worker: $worker_source" >&2
   exit 1
 }
@@ -50,6 +50,12 @@ source_root="$workdir/extract/root.x86_64"
 
 cp -a "$source_root"/. "$target"/
 install -Dm0755 "$worker_source" "$target$worker_target"
+host_worker_sha="$(sha256sum "$worker_source" | awk '{print $1}')"
+domain_worker_sha="$(sha256sum "$target$worker_target" | awk '{print $1}')"
+[[ "$host_worker_sha" == "$domain_worker_sha" ]] || {
+  echo 'Installed Arch worker failed integrity verification.' >&2
+  exit 1
+}
 cp --dereference /etc/resolv.conf "$target/etc/resolv.conf"
 systemd-firstboot --root="$target" --hostname="$machine_name" --locale=C.UTF-8 --timezone=UTC
 
