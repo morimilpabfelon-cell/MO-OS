@@ -114,6 +114,7 @@ for invariant in \
   'run_crash executing' \
   'run_crash receipt' \
   'request_id_conflict' \
+  'Legacy migration accepted a modified receipt.' \
   'Recovery accepted a modified receipt.' \
   'Recovery followed a linked request state.' \
   'Recovery accepted an altered request state.' \
