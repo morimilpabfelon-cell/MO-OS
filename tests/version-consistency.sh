@@ -44,6 +44,8 @@ require_fixed() {
 
 require_fixed "ISO := $iso_relative" Makefile
 require_fixed 'tests/iso-verifier.sh' Makefile
+require_fixed 'tests/recovery-static-checks.sh' Makefile
+require_fixed 'tests/executor-recovery.sh' Makefile
 require_fixed "$iso_relative" build/build-iso.sh
 require_fixed "$iso_relative" build/verify-iso.sh
 require_fixed "$iso_relative" .github/workflows/boot-candidate.yml
@@ -79,7 +81,10 @@ require_fixed 'MO_INSTALLER_VERSION=$mo_version' config/includes.chroot/usr/loca
 require_fixed 'release_file=/etc/mo-release' config/includes.chroot/usr/local/sbin/mo-recovery
 require_fixed 'ci_passphrase="mo-os-${mo_version}-ci-only"' config/includes.chroot/usr/local/sbin/mo-install-autotest
 require_fixed "readonly ci_passphrase='$ci_passphrase'" config/includes.chroot/usr/local/sbin/mo-recovery-autotest
-require_fixed 'exec sudo /usr/bin/python3 /usr/local/sbin/mo-bodyd status' config/includes.chroot/usr/local/bin/mo
+require_fixed 'executor_coordinator=/usr/local/sbin/mo-executord' config/includes.chroot/usr/local/bin/mo
+require_fixed 'exec sudo /usr/bin/python3 "$executor_coordinator" status' config/includes.chroot/usr/local/bin/mo
+require_fixed 'exec sudo /usr/bin/python3 "$executor_coordinator" recover' config/includes.chroot/usr/local/bin/mo
+require_fixed 'ExecStart=/usr/bin/python3 /usr/local/sbin/mo-executord serve' config/includes.chroot/etc/systemd/system/mo-bodyd.service
 
 if grep -R -nE \
   --exclude=version-consistency.sh \
