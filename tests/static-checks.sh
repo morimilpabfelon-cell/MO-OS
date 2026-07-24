@@ -179,13 +179,23 @@ for invariant in \
   require_fixed "$invariant" "$executor_service"
 done
 for invariant in \
-  'MO_ARCH_DISPATCH_WORKER_HOST' 'arch_worker_integrity_mismatch' \
-  'sha256sum_cmd=/usr/bin/sha256sum' 'root@${machine_name}' \
+  'MO_ARCH_DISPATCH_WORKER_HOST' 'MO_ARCH_DISPATCH_NSENTER' \
+  'arch_worker_integrity_mismatch' 'sha256sum_cmd=/usr/bin/sha256sum' \
+  'nsenter_cmd=/usr/bin/nsenter' 'proc_root=/proc' \
+  '--property=RootDirectory' '--property=Leader' \
+  '--mount --uts --ipc --net --pid --cgroup' \
+  'arch_domain_leader_root_mismatch' 'arch_domain_identity_changed' \
   'mo-arch-worker' 'status'; do
   require_fixed "$invariant" "$dispatch"
 done
+if grep -Fq '"$machinectl_cmd" shell' "$dispatch"; then
+  echo 'The Arch dispatcher must not depend on machinectl shell or the guest system bus.' >&2
+  exit 1
+fi
 require_fixed 'mo.arch.worker.status.v0.1' "$worker"
 require_fixed 'arch_worker_integrity_mismatch' "$arch_test"
+require_fixed 'MO_ARCH_DISPATCH_NSENTER' "$arch_test"
+require_fixed 'arch_domain_identity_changed' "$arch_test"
 require_fixed 'Replay request was accepted under another bundle name.' "$executor_test"
 require_fixed 'not_ed25519' "$executor_test"
 require_fixed 'request_signature_size_invalid' "$executor_test"
