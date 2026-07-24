@@ -1,4 +1,4 @@
-.PHONY: help check version-check iso-verifier-test executor-recovery-test arch-real-integration-test configure iso verify boot-test secure-boot-test install-test update-test executor-test arch-dispatch-test run clean
+.PHONY: help check documentation-check version-check iso-verifier-test executor-recovery-test arch-real-integration-test configure iso verify boot-test secure-boot-test install-test update-test executor-test arch-dispatch-test run clean
 
 SHELL := /bin/bash
 ISO := artifacts/mo-os-alpha-0.6-amd64.iso
@@ -6,7 +6,8 @@ ISO := artifacts/mo-os-alpha-0.6-amd64.iso
 help:
 	@printf '%s\n' \
 	  'MO OS build commands' \
-	  '  make check                       Static, version, ISO, recovery and real-Arch invariants' \
+	  '  make check                       Static, documentation, version, ISO, recovery and real-Arch invariants' \
+	  '  make documentation-check         Verify executor and real-Arch documentation agreement' \
 	  '  make version-check               Verify release, ISO and CI version agreement' \
 	  '  make iso-verifier-test           Test ISO digest, path and metadata rejection' \
 	  '  make executor-recovery-test      Test durable executor interruption recovery' \
@@ -27,8 +28,12 @@ check:
 	@bash tests/static-checks.sh
 	@bash tests/recovery-static-checks.sh
 	@bash tests/arch-real-static-checks.sh
+	@bash tests/documentation-consistency.sh
 	@bash tests/version-consistency.sh
 	@bash tests/iso-verifier.sh
+
+documentation-check:
+	@bash tests/documentation-consistency.sh
 
 version-check:
 	@bash tests/version-consistency.sh
