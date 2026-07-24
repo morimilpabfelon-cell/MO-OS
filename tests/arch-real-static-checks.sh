@@ -6,6 +6,7 @@ cd "$repo_root"
 
 test_script=tests/arch-real-integration.sh
 dispatch=config/includes.chroot/usr/local/libexec/mo-arch-dispatch
+mo_command=config/includes.chroot/usr/local/bin/mo
 workflow=.github/workflows/boot-candidate.yml
 
 require_fixed() {
@@ -30,7 +31,7 @@ for invariant in \
   'readonly archive_sha256=9cadf82e389427fb61739ad3b0c213b2abd331354fab6460972e4e52bb8ff9e8' \
   "--proto '=https'" \
   'sha256sum --check --status' \
-  'machinectl nsenter python3' \
+  'machinectl nsenter python3 realpath sha256sum stat systemd-firstboot' \
   '--machine="$machine_name"' \
   '--boot' \
   '--register=yes' \
@@ -42,6 +43,9 @@ for invariant in \
   'value["os_release"]["ID"] == "arch"' \
   'arch_worker_integrity_mismatch' \
   'machinectl terminate "$machine_name"' \
+  'tail --pid="$nspawn_pid"' \
+  'kill -TERM "$nspawn_pid"' \
+  'kill -KILL "$nspawn_pid"' \
   'cleanup_attempt < 20' \
   'rm -rf --one-file-system "$machine_root"' \
   'cleanup left mo-dev registered' \
@@ -52,8 +56,12 @@ done
 
 for invariant in \
   'nsenter_cmd=/usr/bin/nsenter' \
+  'stat_cmd=/usr/bin/stat' \
   '--property=RootDirectory' \
   '--property=Leader' \
+  "-Lc '%d:%i'" \
+  'machine_root_identity' \
+  'leader_root_identity' \
   '--mount --uts --ipc --net --pid --cgroup' \
   '--root="$leader_root"' \
   '--wd="$leader_root"' \
@@ -61,6 +69,9 @@ for invariant in \
   'arch_domain_identity_changed'; do
   require_fixed "$invariant" "$dispatch"
 done
+
+require_fixed 'mount nsenter openssl' "$mo_command"
+require_fixed 'sha256sum stat systemctl' "$mo_command"
 
 if grep -Eq '(^|[[:space:]/])pacman([[:space:]]|$)' "$test_script"; then
   echo 'arch-real-static: real integration test must not invoke pacman' >&2
