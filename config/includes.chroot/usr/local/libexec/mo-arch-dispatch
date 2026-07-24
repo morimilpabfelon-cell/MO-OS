@@ -10,15 +10,19 @@ readonly action=${1:-}
 machine_root=/var/lib/machines/mo-dev
 worker_host=/usr/local/libexec/mo-arch-worker
 machinectl_cmd=/usr/bin/machinectl
+nsenter_cmd=/usr/bin/nsenter
 timeout_cmd=/usr/bin/timeout
 sha256sum_cmd=/usr/bin/sha256sum
 realpath_cmd=/usr/bin/realpath
+proc_root=/proc
 
 if [[ ${MO_ARCH_DISPATCH_ALLOW_TEST_MODE:-0} == 1 ]]; then
   machine_root=${MO_ARCH_DISPATCH_MACHINE_ROOT:-$machine_root}
   worker_host=${MO_ARCH_DISPATCH_WORKER_HOST:-$worker_host}
   machinectl_cmd=${MO_ARCH_DISPATCH_MACHINECTL:-$machinectl_cmd}
-  for test_path in "$machine_root" "$worker_host" "$machinectl_cmd"; do
+  nsenter_cmd=${MO_ARCH_DISPATCH_NSENTER:-$nsenter_cmd}
+  proc_root=${MO_ARCH_DISPATCH_PROC_ROOT:-$proc_root}
+  for test_path in "$machine_root" "$worker_host" "$machinectl_cmd" "$nsenter_cmd" "$proc_root"; do
     case "$test_path" in
       /tmp/*|/mnt/*) ;;
       *) echo 'arch_test_path_invalid' >&2; exit 1 ;;
@@ -46,7 +50,7 @@ fi
   echo 'arch_worker_missing' >&2
   exit 1
 }
-for required_command in "$machinectl_cmd" "$timeout_cmd" "$sha256sum_cmd" "$realpath_cmd"; do
+for required_command in "$machinectl_cmd" "$nsenter_cmd" "$timeout_cmd" "$sha256sum_cmd" "$realpath_cmd"; do
   [[ -x "$required_command" ]] || {
     echo "arch_dispatch_dependency_missing:${required_command}" >&2
     exit 1
@@ -89,7 +93,12 @@ read -r domain_worker_sha _ < <("$sha256sum_cmd" "$resolved_domain_worker")
   exit 1
 }
 
-machine_state="$($timeout_cmd 5 "$machinectl_cmd" show "$machine_name" --property=State --value 2>/dev/null)" || {
+machine_property() {
+  local property=$1
+  "$timeout_cmd" 5 "$machinectl_cmd" show "$machine_name" "--property=${property}" --value 2>/dev/null
+}
+
+machine_state="$(machine_property State)" || {
   echo 'arch_domain_state_unavailable' >&2
   exit 1
 }
@@ -98,7 +107,75 @@ machine_state="$($timeout_cmd 5 "$machinectl_cmd" show "$machine_name" --propert
   exit 1
 }
 
-raw_status="$("$timeout_cmd" 20 "$machinectl_cmd" shell --quiet "root@${machine_name}" "$worker_inside" status | tr -d '\r')"
+registered_root="$(machine_property RootDirectory)" || {
+  echo 'arch_domain_root_unavailable' >&2
+  exit 1
+}
+resolved_registered_root="$($realpath_cmd -e -- "$registered_root")" || {
+  echo 'arch_domain_root_resolution_failed' >&2
+  exit 1
+}
+[[ "$resolved_registered_root" == "$resolved_machine_root" ]] || {
+  echo 'arch_domain_root_mismatch' >&2
+  exit 1
+}
+
+leader_pid="$(machine_property Leader)" || {
+  echo 'arch_domain_leader_unavailable' >&2
+  exit 1
+}
+[[ "$leader_pid" =~ ^[1-9][0-9]*$ ]] || {
+  echo 'arch_domain_leader_invalid' >&2
+  exit 1
+}
+leader_directory="$proc_root/$leader_pid"
+leader_root="$leader_directory/root"
+[[ -d "$leader_directory" && ! -L "$leader_directory" ]] || {
+  echo 'arch_domain_leader_missing' >&2
+  exit 1
+}
+resolved_leader_root="$($realpath_cmd -e -- "$leader_root")" || {
+  echo 'arch_domain_leader_root_unavailable' >&2
+  exit 1
+}
+[[ "$resolved_leader_root" == "$resolved_machine_root" ]] || {
+  echo 'arch_domain_leader_root_mismatch' >&2
+  exit 1
+}
+
+verified_leader="$(machine_property Leader)" || {
+  echo 'arch_domain_leader_unavailable' >&2
+  exit 1
+}
+[[ "$verified_leader" == "$leader_pid" ]] || {
+  echo 'arch_domain_identity_changed' >&2
+  exit 1
+}
+
+if ! raw_status="$(
+  "$timeout_cmd" 20 "$nsenter_cmd" \
+    --target "$leader_pid" \
+    --mount --uts --ipc --net --pid --cgroup \
+    --root="$leader_root" \
+    --wd="$leader_root" \
+    -- "$worker_inside" status
+)"; then
+  echo 'arch_worker_execution_failed' >&2
+  exit 1
+fi
+
+post_state="$(machine_property State)" || {
+  echo 'arch_domain_state_unavailable' >&2
+  exit 1
+}
+post_leader="$(machine_property Leader)" || {
+  echo 'arch_domain_leader_unavailable' >&2
+  exit 1
+}
+[[ "$post_state" == running && "$post_leader" == "$leader_pid" ]] || {
+  echo 'arch_domain_identity_changed' >&2
+  exit 1
+}
 
 printf '%s\n' "$raw_status" | python3 -c '
 import json
