@@ -302,8 +302,8 @@ def recover_legacy(layout: Layout, core: dict[str, Any]) -> int:
         }
         parse_time(state["updated_at"], "legacy_completed_at")
         validate_state(state, canonical_json(state), request_id)
-        write_exclusive_durable(current_path, canonical_json(state))
         verify_receipt(layout, core, state)
+        write_exclusive_durable(current_path, canonical_json(state))
         append_journal(layout, {"event": "legacy_request_state_migrated", "request_id": request_id})
         migrated += 1
     return migrated
@@ -342,4 +342,3 @@ def maybe_crash(layout: Layout, phase: str) -> None:
     if layout.root == pathlib.Path("/") or os.environ.get("MO_BODYD_ALLOW_TEST_ROOT") != "1":
         raise ExecutorError("test_crash_injection_forbidden")
     os._exit(97)
-
