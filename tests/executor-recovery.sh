@@ -68,6 +68,26 @@ PY_REQUEST
   rm "$bundle/request.sig.bin"
 }
 
+run_core_direct() {
+  local bundle=$1
+  python3 - "$core" "$root" "$bundle" <<'PY_CORE_DIRECT'
+import importlib.machinery
+import importlib.util
+import pathlib
+import sys
+sys.dont_write_bytecode = True
+core_path, root_path, bundle_path = sys.argv[1:]
+loader = importlib.machinery.SourceFileLoader("mo_bodyd_legacy_fixture", core_path)
+spec = importlib.util.spec_from_loader("mo_bodyd_legacy_fixture", loader)
+if spec is None:
+    raise SystemExit("core import failed")
+module = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = module
+spec.loader.exec_module(module)
+print(module.process_bundle(module.Layout(pathlib.Path(root_path)), pathlib.Path(bundle_path)))
+PY_CORE_DIRECT
+}
+
 assert_state() {
   local request_id=$1 expected=$2
   python3 - "$root/var/lib/mo-bodyd/requests/${request_id}.json" "$expected" <<'PY_STATE'
@@ -114,6 +134,43 @@ run_crash() {
     exit 1
   }
 }
+
+# Migrate a receipt created by the pre-coordinator core only after signature verification.
+legacy_bundle="$workdir/request-legacy"
+make_request "$legacy_bundle" req-legacy
+run_core_direct "$legacy_bundle" > "$workdir/legacy-receipt-path"
+[[ -f "$root/var/lib/mo-bodyd/accepted/req-legacy" ]]
+[[ ! -e "$root/var/lib/mo-bodyd/requests/req-legacy.json" ]]
+"${coordinator_cmd[@]}" --root "$root" recover > "$workdir/recover-legacy.json"
+grep -Fq '"migrated":1' "$workdir/recover-legacy.json"
+assert_state req-legacy completed
+assert_receipt req-legacy completed
+
+legacy_tampered_bundle="$workdir/request-legacy-tampered"
+make_request "$legacy_tampered_bundle" req-legacy-tampered
+run_core_direct "$legacy_tampered_bundle" > "$workdir/legacy-tampered-receipt-path"
+legacy_tampered_receipt="$root/var/lib/mo-bodyd/outbox/req-legacy-tampered/receipt.json"
+cp "$legacy_tampered_receipt" "$workdir/legacy-tampered.backup"
+python3 - "$legacy_tampered_receipt" <<'PY_TAMPER_LEGACY'
+import json
+import pathlib
+import sys
+path = pathlib.Path(sys.argv[1])
+receipt = json.loads(path.read_text(encoding="utf-8"))
+receipt["output"]["tampered"] = True
+path.write_text(json.dumps(receipt, sort_keys=True, separators=(",", ":")) + "\n", encoding="utf-8")
+PY_TAMPER_LEGACY
+if "${coordinator_cmd[@]}" --root "$root" recover \
+  >"$workdir/legacy-tampered.out" 2>"$workdir/legacy-tampered.err"; then
+  echo 'Legacy migration accepted a modified receipt.' >&2
+  exit 1
+fi
+grep -Fq recovery_receipt_signature_invalid "$workdir/legacy-tampered.err"
+[[ ! -e "$root/var/lib/mo-bodyd/requests/req-legacy-tampered.json" ]]
+cp "$workdir/legacy-tampered.backup" "$legacy_tampered_receipt"
+"${coordinator_cmd[@]}" --root "$root" recover >/dev/null
+assert_state req-legacy-tampered completed
+assert_receipt req-legacy-tampered completed
 
 # Interruption after durable acceptance: fail closed without execution.
 accepted_bundle="$workdir/request-accepted"
@@ -166,7 +223,7 @@ if ! { [[ "$rc_a" -eq 0 && "$rc_b" -ne 0 ]] || [[ "$rc_b" -eq 0 && "$rc_a" -ne 0
   echo "Concurrent processing did not produce exactly one success: $rc_a $rc_b" >&2
   exit 1
 fi
-cat "$workdir/concurrent-a.err" "$workdir/concurrent-b.err" | grep -Fq request_replay_rejected
+grep -Fq request_replay_rejected "$workdir/concurrent-a.err" "$workdir/concurrent-b.err"
 assert_state req-concurrent completed
 assert_receipt req-concurrent completed
 
