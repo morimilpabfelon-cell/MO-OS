@@ -52,7 +52,9 @@ created_worker=0
 
 cleanup() {
   local status=$?
+  local cleanup_failed=0
   set +e
+
   if machinectl show "$machine_name" >/dev/null 2>&1; then
     timeout 20 machinectl terminate "$machine_name" >/dev/null 2>&1 || true
   fi
@@ -62,6 +64,7 @@ cleanup() {
     kill -KILL "$nspawn_pid" >/dev/null 2>&1 || true
     wait "$nspawn_pid" >/dev/null 2>&1 || true
   fi
+
   if ((created_machine_root)); then
     rm -rf --one-file-system "$machine_root"
   fi
@@ -73,9 +76,25 @@ cleanup() {
   fi
   rmdir /usr/local/libexec >/dev/null 2>&1 || true
   rm -rf "$workdir"
+
+  if machinectl show "$machine_name" >/dev/null 2>&1; then
+    echo 'arch-real-integration: cleanup left mo-dev registered' >&2
+    cleanup_failed=1
+  fi
+  for path in "$machine_root" "$host_dispatch" "$host_worker" "$workdir"; do
+    if [[ -e "$path" || -L "$path" ]]; then
+      echo "arch-real-integration: cleanup left path: $path" >&2
+      cleanup_failed=1
+    fi
+  done
+  if ((cleanup_failed)) && ((status == 0)); then
+    status=1
+  fi
   exit "$status"
 }
-trap cleanup EXIT INT TERM HUP
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM HUP
 
 mkdir -p /usr/local/libexec
 install -m0755 "$source_dispatch" "$host_dispatch"
@@ -127,10 +146,10 @@ systemd-nspawn \
 nspawn_pid=$!
 
 running=0
-for _ in $(seq 1 60); do
+for ((attempt = 0; attempt < 60; attempt++)); do
   if ! kill -0 "$nspawn_pid" >/dev/null 2>&1; then
     echo 'arch-real-integration: systemd-nspawn exited before Arch became ready' >&2
-    cat "$workdir/nspawn.log" >&2
+    sed -n '1,200p' "$workdir/nspawn.log" >&2
     exit 1
   fi
   machine_state="$(machinectl show "$machine_name" --property=State --value 2>/dev/null || true)"
@@ -142,11 +161,11 @@ for _ in $(seq 1 60); do
 done
 ((running)) || {
   echo 'arch-real-integration: Arch container did not reach State=running' >&2
-  cat "$workdir/nspawn.log" >&2
+  sed -n '1,200p' "$workdir/nspawn.log" >&2
   exit 1
 }
 
-status_json="$($host_dispatch status)"
+status_json="$("$host_dispatch" status)"
 printf '%s\n' "$status_json" > "$workdir/status.json"
 python3 - "$workdir/status.json" <<'PY_VALIDATE_STATUS'
 import json
@@ -170,7 +189,7 @@ if "$host_dispatch" status >"$workdir/tampered.out" 2>"$workdir/tampered.err"; t
 fi
 grep -Fxq 'arch_worker_integrity_mismatch' "$workdir/tampered.err" || {
   echo 'arch-real-integration: modified worker failed for the wrong reason' >&2
-  cat "$workdir/tampered.err" >&2
+  sed -n '1,200p' "$workdir/tampered.err" >&2
   exit 1
 }
 
