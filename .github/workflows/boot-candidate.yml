@@ -27,9 +27,10 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            btrfs-progs dosfstools expect mtools openssl ovmf \
+            btrfs-progs curl dosfstools expect mtools openssl ovmf \
             python3-virt-firmware qemu-system-x86 sbsigntool shellcheck \
-            systemd-boot-efi systemd-ukify util-linux uuid-runtime xorriso make
+            systemd-boot-efi systemd-container systemd-ukify util-linux \
+            uuid-runtime xorriso zstd make
 
       - name: Validate source tree
         shell: bash
@@ -40,6 +41,12 @@ jobs:
           status=${PIPESTATUS[0]}
           set -e
           exit "$status"
+
+      - name: Validate real Debian-to-Arch systemd-nspawn path
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          sudo make arch-real-integration-test 2>&1 | tee diagnostics/real-arch-integration.log
 
       - name: Verify Morimil executor authority boundary
         shell: bash
