@@ -1,4 +1,4 @@
-.PHONY: help check version-check iso-verifier-test executor-recovery-test configure iso verify boot-test secure-boot-test install-test update-test executor-test arch-dispatch-test run clean
+.PHONY: help check version-check iso-verifier-test executor-recovery-test arch-real-integration-test configure iso verify boot-test secure-boot-test install-test update-test executor-test arch-dispatch-test run clean
 
 SHELL := /bin/bash
 ISO := artifacts/mo-os-alpha-0.6-amd64.iso
@@ -6,25 +6,27 @@ ISO := artifacts/mo-os-alpha-0.6-amd64.iso
 help:
 	@printf '%s\n' \
 	  'MO OS build commands' \
-	  '  make check                    Static, version, ISO and recovery validation' \
-	  '  make version-check            Verify release, ISO and CI version agreement' \
-	  '  make iso-verifier-test        Test ISO digest, path and metadata rejection' \
-	  '  make executor-recovery-test   Test durable executor interruption recovery' \
-	  '  make configure                Generate live-build state' \
-	  '  sudo make iso                 Build the bootable ISO' \
-	  '  make verify                   Verify stored checksum and ISO metadata' \
-	  '  make boot-test                Verify terminal boot in QEMU' \
-	  '  make secure-boot-test         Boot a signed UKI and reject unsigned or modified UKIs' \
-	  '  make install-test             Install, unlock, mutate, roll back and reboot a disposable QEMU disk' \
-	  '  sudo make update-test         Verify signatures, snapshots, tamper rejection and anti-replay' \
-	  '  make executor-test            Verify signed execution, recovery and Debian-to-Arch status' \
-	  '  make arch-dispatch-test       Verify Debian governance over the fixed Arch worker' \
-	  '  make run                      Boot the ISO interactively' \
-	  '  sudo make clean               Remove live-build output'
+	  '  make check                       Static, version, ISO, recovery and real-Arch invariants' \
+	  '  make version-check               Verify release, ISO and CI version agreement' \
+	  '  make iso-verifier-test           Test ISO digest, path and metadata rejection' \
+	  '  make executor-recovery-test      Test durable executor interruption recovery' \
+	  '  sudo make arch-real-integration-test  Test Debian-to-real-Arch systemd-nspawn execution' \
+	  '  make configure                   Generate live-build state' \
+	  '  sudo make iso                    Build the bootable ISO' \
+	  '  make verify                      Verify stored checksum and ISO metadata' \
+	  '  make boot-test                   Verify terminal boot in QEMU' \
+	  '  make secure-boot-test            Boot a signed UKI and reject unsigned or modified UKIs' \
+	  '  make install-test                Install, unlock, mutate, roll back and reboot a disposable QEMU disk' \
+	  '  sudo make update-test            Verify signatures, snapshots, tamper rejection and anti-replay' \
+	  '  make executor-test               Verify signed execution, recovery and Debian-to-Arch status' \
+	  '  make arch-dispatch-test          Verify Debian governance over the fixed Arch worker' \
+	  '  make run                         Boot the ISO interactively' \
+	  '  sudo make clean                  Remove live-build output'
 
 check:
 	@bash tests/static-checks.sh
 	@bash tests/recovery-static-checks.sh
+	@bash tests/arch-real-static-checks.sh
 	@bash tests/version-consistency.sh
 	@bash tests/iso-verifier.sh
 
@@ -36,6 +38,9 @@ iso-verifier-test:
 
 executor-recovery-test:
 	@bash tests/executor-recovery.sh
+
+arch-real-integration-test:
+	@bash tests/arch-real-integration.sh
 
 configure:
 	@bash build/configure.sh
