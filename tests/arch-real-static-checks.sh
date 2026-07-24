@@ -15,8 +15,8 @@ require_fixed() {
   }
 }
 
-[[ -x "$test_script" ]] || {
-  echo 'arch-real-static: integration test must be executable' >&2
+[[ -f "$test_script" && ! -L "$test_script" ]] || {
+  echo 'arch-real-static: integration test must be a regular repository file' >&2
   exit 1
 }
 
