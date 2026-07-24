@@ -1,7 +1,91 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
+export LC_ALL=C
 
 readonly action=${1:-}
+readonly os_release_path=/usr/lib/os-release
+readonly uname_cmd=/usr/bin/uname
+
+fail() {
+  printf '%s\n' "$1" >&2
+  exit 1
+}
+
+normalize_os_release_value() {
+  local raw_value=$1
+  local first last value
+
+  raw_value=${raw_value%$'\r'}
+  [[ -n "$raw_value" ]] || {
+    printf '%s' ''
+    return 0
+  }
+
+  first=${raw_value:0:1}
+  last=${raw_value: -1}
+  if [[ "$first" == '"' || "$first" == "'" ]]; then
+    [[ ${#raw_value} -ge 2 && "$last" == "$first" ]] || fail 'arch_os_release_value_invalid'
+    value=${raw_value#?}
+    value=${value%?}
+  else
+    [[ "$last" != '"' && "$last" != "'" ]] || fail 'arch_os_release_value_invalid'
+    value=$raw_value
+  fi
+  printf '%s' "$value"
+}
+
+emit_status() {
+  local key raw_value value
+  local id='' name='Arch Linux' version_id='rolling'
+  local id_seen=0 name_seen=0 version_seen=0
+  local kernel_release machine
+
+  [[ -f "$os_release_path" && ! -L "$os_release_path" && -r "$os_release_path" ]] || \
+    fail 'arch_os_release_missing'
+  [[ -x "$uname_cmd" ]] || fail 'arch_uname_missing'
+
+  while IFS='=' read -r key raw_value; do
+    case "$key" in
+      ID|NAME|VERSION_ID)
+        value=$(normalize_os_release_value "$raw_value")
+        ;;
+      *)
+        continue
+        ;;
+    esac
+
+    case "$key" in
+      ID)
+        ((id_seen == 0)) || fail 'arch_os_release_duplicate_field'
+        id_seen=1
+        id=$value
+        ;;
+      NAME)
+        ((name_seen == 0)) || fail 'arch_os_release_duplicate_field'
+        name_seen=1
+        name=$value
+        ;;
+      VERSION_ID)
+        ((version_seen == 0)) || fail 'arch_os_release_duplicate_field'
+        version_seen=1
+        version_id=$value
+        ;;
+    esac
+  done < "$os_release_path"
+
+  [[ "$id_seen" -eq 1 && "$id" == arch ]] || fail 'arch_identity_mismatch'
+  [[ "$id" =~ ^[a-z0-9][a-z0-9._-]{0,63}$ ]] || fail 'arch_os_release_id_invalid'
+  [[ "$name" =~ ^[A-Za-z0-9][A-Za-z0-9\ ._()+/-]{0,127}$ ]] || fail 'arch_os_release_name_invalid'
+  [[ "$version_id" =~ ^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}$ ]] || fail 'arch_os_release_version_invalid'
+
+  kernel_release=$($uname_cmd -r)
+  machine=$($uname_cmd -m)
+  [[ "$kernel_release" =~ ^[A-Za-z0-9._+:-]{1,128}$ ]] || fail 'arch_kernel_release_invalid'
+  [[ "$machine" =~ ^[A-Za-z0-9._-]{1,64}$ ]] || fail 'arch_machine_invalid'
+
+  printf '{"domain":"arch","kernel_release":"%s","machine":"%s","os_release":{"ID":"%s","NAME":"%s","VERSION_ID":"%s"},"schema_version":"mo.arch.worker.status.v0.1"}\n' \
+    "$kernel_release" "$machine" "$id" "$name" "$version_id"
+}
 
 if [[ $# -ne 1 ]]; then
   echo 'Usage: mo-arch-worker status' >&2
@@ -10,40 +94,7 @@ fi
 
 case "$action" in
   status)
-    exec python3 - <<'PY_STATUS'
-import json
-import pathlib
-import platform
-
-
-def read_os_release() -> dict[str, str]:
-    result: dict[str, str] = {}
-    path = pathlib.Path("/etc/os-release")
-    if not path.is_file():
-        raise SystemExit("arch_os_release_missing")
-    for raw_line in path.read_text(encoding="utf-8").splitlines():
-        if not raw_line or raw_line.startswith("#") or "=" not in raw_line:
-            continue
-        key, value = raw_line.split("=", 1)
-        result[key] = value.strip().strip('"')
-    if result.get("ID") != "arch":
-        raise SystemExit("arch_identity_mismatch")
-    return {
-        "ID": result["ID"],
-        "NAME": result.get("NAME", "Arch Linux"),
-        "VERSION_ID": result.get("VERSION_ID", "rolling"),
-    }
-
-
-status = {
-    "schema_version": "mo.arch.worker.status.v0.1",
-    "domain": "arch",
-    "kernel_release": platform.release(),
-    "machine": platform.machine(),
-    "os_release": read_os_release(),
-}
-print(json.dumps(status, ensure_ascii=False, sort_keys=True, separators=(",", ":")))
-PY_STATUS
+    emit_status
     ;;
   *)
     echo 'arch_worker_operation_not_allowed' >&2
