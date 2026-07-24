@@ -1,0 +1,230 @@
+#!/usr/bin/env python3
+"""Durable coordinator for the MO OS signed executor."""
+
+from __future__ import annotations
+
+import sys
+sys.dont_write_bytecode = True
+
+import argparse
+import hashlib
+import pathlib
+import shutil
+import time
+
+module_dir = pathlib.Path(__file__).resolve().parent.parent / "libexec/mo-executord"
+if module_dir.is_symlink() or not module_dir.is_dir() or module_dir.resolve() != module_dir:
+    raise RuntimeError("mo-executord module directory is invalid")
+sys.path.insert(0, str(module_dir))
+
+from mo_executord_base import *
+from mo_executord_core import core_status, run_core, validate_request
+from mo_executord_state import *
+
+def delegate_rejection(layout: Layout, bundle: pathlib.Path) -> pathlib.Path:
+    completed = run_core(layout, ["process", "--bundle", str(bundle)], allow_failure=True)
+    if completed.returncode != 0:
+        detail = completed.stderr.decode("utf-8", "replace").strip()
+        raise ExecutorError(detail or "request_rejected")
+    output = completed.stdout.decode("utf-8", "replace").strip()
+    if not output:
+        raise ExecutorError("executor_core_receipt_path_missing")
+    return pathlib.Path(output)
+
+
+def process_locked(layout: Layout, bundle: pathlib.Path, core: dict[str, Any]) -> pathlib.Path:
+    recover_locked(layout, core)
+    incoming = snapshot_bundle(layout, bundle)
+    try:
+        try:
+            verified = validate_request(layout, incoming, core)
+        except ExecutorError:
+            try:
+                return delegate_rejection(layout, incoming)
+            finally:
+                shutil.rmtree(incoming, ignore_errors=True)
+        path = state_path(layout, verified.request_id)
+    except Exception:
+        shutil.rmtree(incoming, ignore_errors=True)
+        raise
+    if path.exists() or path.is_symlink():
+        existing = read_state(layout, verified.request_id)
+        if existing["request_sha256"] != verified.digest:
+            raise ExecutorError("request_id_conflict")
+        raise ExecutorError("request_replay_rejected")
+    staging = adopt_staging(layout, incoming, verified)
+    state = new_state(verified)
+    write_exclusive_durable(path, canonical_json(state))
+    append_journal(layout, {
+        "event": "request_accepted_durable", "request_id": verified.request_id,
+        "request_sha256": verified.digest, "operation": verified.operation,
+    })
+    maybe_crash(layout, "accepted")
+    state = update_state(layout, state, "executing")
+    append_journal(layout, {
+        "event": "request_execution_started", "request_id": verified.request_id,
+        "request_sha256": verified.digest, "operation": verified.operation,
+    })
+    maybe_crash(layout, "executing")
+    completed = run_core(layout, ["process", "--bundle", str(staging)], allow_failure=True)
+    if completed.returncode != 0:
+        detail = completed.stderr.decode("utf-8", "replace").strip() or "executor_core_failed"
+        receipt = write_failed_receipt(layout, core, state, f"executor_core_failed:{detail}")
+        ensure_legacy_marker(layout, state)
+        state = update_state(layout, state, "failed", f"executor_core_failed:{detail}")
+        cleanup_staging(layout, state)
+        append_journal(layout, {
+            "event": "request_failed", "request_id": verified.request_id,
+            "request_sha256": verified.digest, "error": state["error"],
+        })
+        return receipt
+    receipt_output = completed.stdout.decode("utf-8", "replace").strip()
+    expected = layout.outbox / verified.request_id
+    if pathlib.Path(receipt_output).resolve() != expected.resolve():
+        raise ExecutorError("executor_core_receipt_path_mismatch")
+    _, receipt = verify_receipt(layout, core, state)
+    maybe_crash(layout, "receipt")
+    error = receipt["error"] if receipt["status"] == "failed" else None
+    state = update_state(layout, state, receipt["status"], error)
+    cleanup_staging(layout, state)
+    append_journal(layout, {
+        "event": "request_terminal", "request_id": verified.request_id,
+        "request_sha256": verified.digest, "status": state["status"],
+    })
+    return expected
+
+
+def move_bundle(bundle: pathlib.Path, destination_root: pathlib.Path) -> pathlib.Path:
+    destination_root.mkdir(parents=True, exist_ok=True)
+    destination = destination_root / bundle.name
+    if destination.exists() or destination.is_symlink():
+        suffix = hashlib.sha256((str(bundle) + format_time(utc_now())).encode("utf-8")).hexdigest()[:12]
+        destination = destination_root / f"{bundle.name}-{suffix}"
+    shutil.move(str(bundle), str(destination))
+    fsync_directory(destination_root)
+    return destination
+
+
+def process(layout: Layout, bundle: pathlib.Path) -> pathlib.Path:
+    require_root(layout.root)
+    with executor_lock(layout):
+        status = core_status(layout)
+        return process_locked(layout, bundle, status)
+
+
+def recover(layout: Layout) -> dict[str, int]:
+    require_root(layout.root)
+    with executor_lock(layout):
+        status = core_status(layout)
+        return recover_locked(layout, status, verify_terminal=True)
+
+
+def show_status(layout: Layout) -> None:
+    require_root(layout.root)
+    with executor_lock(layout):
+        layout.ensure()
+        status = core_status(layout)
+        pending = 0
+        terminal = 0
+        for path in layout.requests.iterdir():
+            if path.name.startswith("."):
+                continue
+            if path.suffix != ".json":
+                raise ExecutorError("request_state_filename_invalid")
+            state = read_state(layout, path.stem)
+            pending += int(state["status"] in PENDING_STATES)
+            terminal += int(state["status"] in TERMINAL_STATES)
+        legacy_unmigrated = sum(
+            1 for marker in layout.legacy_accepted.iterdir()
+            if not marker.name.startswith(".") and not state_path(layout, marker.name).exists()
+        )
+        status.update({
+            "request_state_schema": SCHEMA_STATE,
+            "request_states": str(layout.requests),
+            "pending_requests": pending,
+            "terminal_requests": terminal,
+            "legacy_unmigrated_requests": legacy_unmigrated,
+            "recovery_required": pending > 0 or legacy_unmigrated > 0,
+        })
+        print(canonical_json(status).decode("utf-8"), end="")
+
+
+def serve(layout: Layout, poll_seconds: float) -> None:
+    require_root(layout.root)
+    if poll_seconds < 0.1 or poll_seconds > 60:
+        raise ExecutorError("poll_seconds_out_of_range")
+    with executor_lock(layout):
+        status = core_status(layout)
+        recover_locked(layout, status, verify_terminal=True)
+        while True:
+            bundles = sorted(path for path in layout.inbox.iterdir() if path.is_dir() and not path.is_symlink())
+            for bundle in bundles:
+                try:
+                    receipt = process_locked(layout, bundle, status)
+                    move_bundle(bundle, layout.processed)
+                    print(receipt, flush=True)
+                except ExecutorError as exc:
+                    append_journal(layout, {
+                        "event": "bundle_processing_failed", "bundle": bundle.name,
+                        "error": str(exc),
+                    })
+                    move_bundle(bundle, layout.quarantine)
+            time.sleep(poll_seconds)
+
+
+def passthrough(layout: Layout, arguments: list[str]) -> None:
+    require_root(layout.root)
+    completed = run_core(layout, arguments, allow_failure=True)
+    sys.stdout.buffer.write(completed.stdout)
+    sys.stderr.buffer.write(completed.stderr)
+    raise SystemExit(completed.returncode)
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="MO OS durable Morimil executor coordinator")
+    parser.add_argument("--root", default="/", help=argparse.SUPPRESS)
+    commands = parser.add_subparsers(dest="command", required=True)
+    commands.add_parser("init", help="Initialize the receipt-signing identity")
+    pair = commands.add_parser("pair", help="Pair one Ed25519 Morimil controller")
+    pair.add_argument("--controller-key", required=True, type=pathlib.Path)
+    pair.add_argument("--instance-id", required=True)
+    pair.add_argument("--controller-body-id", required=True)
+    commands.add_parser("status", help="Show executor, pairing, and durable request status")
+    commands.add_parser("recover", help="Recover interrupted accepted requests without re-execution")
+    process_parser = commands.add_parser("process", help="Process one signed request bundle")
+    process_parser.add_argument("--bundle", required=True, type=pathlib.Path)
+    serve_parser = commands.add_parser("serve", help="Recover and process bundles from the inbox")
+    serve_parser.add_argument("--poll-seconds", type=float, default=1.0)
+    return parser
+
+
+def main() -> int:
+    args = build_parser().parse_args()
+    try:
+        layout = Layout(resolve_root(args.root))
+        if args.command == "init":
+            passthrough(layout, ["init"])
+        if args.command == "pair":
+            passthrough(layout, [
+                "pair", "--controller-key", str(args.controller_key.resolve()),
+                "--instance-id", args.instance_id,
+                "--controller-body-id", args.controller_body_id,
+            ])
+        if args.command == "status":
+            show_status(layout)
+        elif args.command == "recover":
+            print(canonical_json(recover(layout)).decode("utf-8"), end="")
+        elif args.command == "process":
+            print(process(layout, args.bundle.resolve()))
+        elif args.command == "serve":
+            serve(layout, args.poll_seconds)
+        elif args.command not in {"init", "pair"}:
+            raise ExecutorError("command_not_supported")
+    except ExecutorError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
