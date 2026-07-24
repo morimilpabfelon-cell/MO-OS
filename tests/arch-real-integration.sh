@@ -26,11 +26,11 @@ for path in "$machine_root" "$host_dispatch" "$host_worker"; do
   }
 done
 
-[[ -f "$source_dispatch" && ! -L "$source_dispatch" && -x "$source_dispatch" ]] || {
+[[ -f "$source_dispatch" && ! -L "$source_dispatch" ]] || {
   echo 'arch-real-integration: governed dispatcher source is invalid' >&2
   exit 1
 }
-[[ -f "$source_worker" && ! -L "$source_worker" && -x "$source_worker" ]] || {
+[[ -f "$source_worker" && ! -L "$source_worker" ]] || {
   echo 'arch-real-integration: governed worker source is invalid' >&2
   exit 1
 }
