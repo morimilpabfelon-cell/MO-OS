@@ -15,6 +15,9 @@ timeout_cmd=/usr/bin/timeout
 sha256sum_cmd=/usr/bin/sha256sum
 realpath_cmd=/usr/bin/realpath
 proc_root=/proc
+readonly state_property=--property=State
+readonly root_property=--property=RootDirectory
+readonly leader_property=--property=Leader
 
 if [[ ${MO_ARCH_DISPATCH_ALLOW_TEST_MODE:-0} == 1 ]]; then
   machine_root=${MO_ARCH_DISPATCH_MACHINE_ROOT:-$machine_root}
@@ -94,11 +97,11 @@ read -r domain_worker_sha _ < <("$sha256sum_cmd" "$resolved_domain_worker")
 }
 
 machine_property() {
-  local property=$1
-  "$timeout_cmd" 5 "$machinectl_cmd" show "$machine_name" "--property=${property}" --value 2>/dev/null
+  local property_option=$1
+  "$timeout_cmd" 5 "$machinectl_cmd" show "$machine_name" "$property_option" --value 2>/dev/null
 }
 
-machine_state="$(machine_property State)" || {
+machine_state="$(machine_property "$state_property")" || {
   echo 'arch_domain_state_unavailable' >&2
   exit 1
 }
@@ -107,7 +110,7 @@ machine_state="$(machine_property State)" || {
   exit 1
 }
 
-registered_root="$(machine_property RootDirectory)" || {
+registered_root="$(machine_property "$root_property")" || {
   echo 'arch_domain_root_unavailable' >&2
   exit 1
 }
@@ -120,7 +123,7 @@ resolved_registered_root="$($realpath_cmd -e -- "$registered_root")" || {
   exit 1
 }
 
-leader_pid="$(machine_property Leader)" || {
+leader_pid="$(machine_property "$leader_property")" || {
   echo 'arch_domain_leader_unavailable' >&2
   exit 1
 }
@@ -143,7 +146,7 @@ resolved_leader_root="$($realpath_cmd -e -- "$leader_root")" || {
   exit 1
 }
 
-verified_leader="$(machine_property Leader)" || {
+verified_leader="$(machine_property "$leader_property")" || {
   echo 'arch_domain_leader_unavailable' >&2
   exit 1
 }
@@ -164,11 +167,11 @@ if ! raw_status="$(
   exit 1
 fi
 
-post_state="$(machine_property State)" || {
+post_state="$(machine_property "$state_property")" || {
   echo 'arch_domain_state_unavailable' >&2
   exit 1
 }
-post_leader="$(machine_property Leader)" || {
+post_leader="$(machine_property "$leader_property")" || {
   echo 'arch_domain_leader_unavailable' >&2
   exit 1
 }
