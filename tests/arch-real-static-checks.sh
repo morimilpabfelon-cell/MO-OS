@@ -35,12 +35,14 @@ for invariant in \
   '--private-network' \
   '--settings=no' \
   'machinectl show "$machine_name" --property=State --value' \
-  'status_json="$($host_dispatch status)"' \
+  'status_json="$("$host_dispatch" status)"' \
   'value["domain"] == "arch"' \
   'value["os_release"]["ID"] == "arch"' \
   'arch_worker_integrity_mismatch' \
   'machinectl terminate "$machine_name"' \
   'rm -rf --one-file-system "$machine_root"' \
+  'cleanup left mo-dev registered' \
+  'cleanup left path' \
   'refusing to overwrite existing path'; do
   require_fixed "$invariant" "$test_script"
 done
