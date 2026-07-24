@@ -71,8 +71,8 @@ doctor() {
   local failures=0
   for command_name in \
     bash blkid blockdev btrfs chroot cryptsetup curl findmnt git grub-install \
-    lsblk machinectl mkfs.btrfs mkfs.ext4 mkfs.vfat mount openssl parted python3 \
-    rsync sha256sum systemctl systemd-nspawn tar timeout update-grub wipefs zstd; do
+    lsblk machinectl mkfs.btrfs mkfs.ext4 mkfs.vfat mount nsenter openssl parted python3 \
+    rsync sha256sum stat systemctl systemd-nspawn tar timeout update-grub wipefs zstd; do
     if command -v "$command_name" >/dev/null 2>&1; then
       printf '[ok] %s\n' "$command_name"
     else
