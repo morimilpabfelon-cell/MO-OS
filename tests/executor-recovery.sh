@@ -234,6 +234,23 @@ fi
 grep -Fq recovery_receipt_digest_mismatch "$workdir/state-tamper.err"
 cp "$workdir/state.backup" "$state_to_tamper"
 
+# An idle daemon must not monopolize the global executor lock.
+"${coordinator_cmd[@]}" --root "$root" serve --poll-seconds 0.1 \
+  >"$workdir/serve-idle.out" 2>"$workdir/serve-idle.err" &
+idle_serve_pid=$!
+sleep 0.5
+timeout -k 1s 3s "${coordinator_cmd[@]}" --root "$root" status \
+  >"$workdir/status-while-serving.json"
+kill "$idle_serve_pid"
+wait "$idle_serve_pid" 2>/dev/null || true
+python3 - "$workdir/status-while-serving.json" <<'PY_STATUS_WHILE_SERVING'
+import json
+import pathlib
+import sys
+status = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+assert status["pending_requests"] == 0, status
+PY_STATUS_WHILE_SERVING
+
 # Restarting serve recovers pending state first and quarantines the replay bundle.
 serve_bundle="$root/var/lib/mo-bodyd/inbox/serve-bundle"
 make_request "$serve_bundle" req-serve-recovery
