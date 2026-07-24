@@ -36,7 +36,7 @@ done
 }
 
 for command_name in \
-  curl install machinectl python3 realpath sha256sum systemd-firstboot \
+  curl install machinectl nsenter python3 realpath sha256sum systemd-firstboot \
   systemd-nspawn tar timeout unzstd; do
   command -v "$command_name" >/dev/null 2>&1 || {
     echo "arch-real-integration: missing dependency: $command_name" >&2
@@ -53,6 +53,7 @@ created_worker=0
 cleanup() {
   local status=$?
   local cleanup_failed=0
+  local cleanup_attempt
   set +e
 
   if machinectl show "$machine_name" >/dev/null 2>&1; then
@@ -64,6 +65,13 @@ cleanup() {
     kill -KILL "$nspawn_pid" >/dev/null 2>&1 || true
     wait "$nspawn_pid" >/dev/null 2>&1 || true
   fi
+
+  for ((cleanup_attempt = 0; cleanup_attempt < 20; cleanup_attempt++)); do
+    if ! machinectl show "$machine_name" >/dev/null 2>&1; then
+      break
+    fi
+    sleep 1
+  done
 
   if ((created_machine_root)); then
     rm -rf --one-file-system "$machine_root"
@@ -165,8 +173,12 @@ done
   exit 1
 }
 
-status_json="$("$host_dispatch" status)"
-printf '%s\n' "$status_json" > "$workdir/status.json"
+if ! "$host_dispatch" status >"$workdir/status.json" 2>"$workdir/dispatch.err"; then
+  echo 'arch-real-integration: governed dispatcher failed against real Arch' >&2
+  sed -n '1,200p' "$workdir/dispatch.err" >&2
+  sed -n '1,200p' "$workdir/nspawn.log" >&2
+  exit 1
+fi
 python3 - "$workdir/status.json" <<'PY_VALIDATE_STATUS'
 import json
 import pathlib
@@ -176,7 +188,7 @@ raw = pathlib.Path(sys.argv[1]).read_bytes()
 value = json.loads(raw.decode("utf-8"))
 assert value["schema_version"] == "mo.arch.worker.status.v0.1", value
 assert value["domain"] == "arch", value
-assert value["machine"] == "mo-dev", value
+assert value["machine"] == "x86_64", value
 assert value["os_release"]["ID"] == "arch", value
 expected = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n"
 assert raw == expected.encode("utf-8"), (raw, expected)
