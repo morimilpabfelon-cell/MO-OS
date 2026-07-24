@@ -156,9 +156,13 @@ def serve(layout: Layout, poll_seconds: float) -> None:
     with executor_lock(layout):
         status = core_status(layout)
         recover_locked(layout, status, verify_terminal=True)
-        while True:
-            bundles = sorted(path for path in layout.inbox.iterdir() if path.is_dir() and not path.is_symlink())
-            for bundle in bundles:
+    while True:
+        bundles = sorted(path for path in layout.inbox.iterdir() if path.is_dir() and not path.is_symlink())
+        for bundle in bundles:
+            with executor_lock(layout):
+                if not bundle.is_dir() or bundle.is_symlink():
+                    continue
+                status = core_status(layout)
                 try:
                     receipt = process_locked(layout, bundle, status)
                     move_bundle(bundle, layout.processed)
@@ -168,8 +172,9 @@ def serve(layout: Layout, poll_seconds: float) -> None:
                         "event": "bundle_processing_failed", "bundle": bundle.name,
                         "error": str(exc),
                     })
-                    move_bundle(bundle, layout.quarantine)
-            time.sleep(poll_seconds)
+                    if bundle.is_dir() and not bundle.is_symlink():
+                        move_bundle(bundle, layout.quarantine)
+        time.sleep(poll_seconds)
 
 
 def passthrough(layout: Layout, arguments: list[str]) -> None:
