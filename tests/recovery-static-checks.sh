@@ -117,6 +117,7 @@ for invariant in \
   'Recovery accepted a modified receipt.' \
   'Recovery followed a linked request state.' \
   'Recovery accepted an altered request state.' \
+  'status-while-serving.json' \
   'req-serve-recovery' \
   'openssl pkeyutl -verify -pubin' \
   'pending_requests"] == 0'; do
