@@ -5,6 +5,7 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
 test_script=tests/arch-real-integration.sh
+dispatch=config/includes.chroot/usr/local/libexec/mo-arch-dispatch
 workflow=.github/workflows/boot-candidate.yml
 
 require_fixed() {
@@ -29,22 +30,36 @@ for invariant in \
   'readonly archive_sha256=9cadf82e389427fb61739ad3b0c213b2abd331354fab6460972e4e52bb8ff9e8' \
   "--proto '=https'" \
   'sha256sum --check --status' \
+  'machinectl nsenter python3' \
   '--machine="$machine_name"' \
   '--boot' \
   '--register=yes' \
   '--private-network' \
   '--settings=no' \
   'machinectl show "$machine_name" --property=State --value' \
-  'status_json="$("$host_dispatch" status)"' \
   'value["domain"] == "arch"' \
+  'value["machine"] == "x86_64"' \
   'value["os_release"]["ID"] == "arch"' \
   'arch_worker_integrity_mismatch' \
   'machinectl terminate "$machine_name"' \
+  'cleanup_attempt < 20' \
   'rm -rf --one-file-system "$machine_root"' \
   'cleanup left mo-dev registered' \
   'cleanup left path' \
   'refusing to overwrite existing path'; do
   require_fixed "$invariant" "$test_script"
+done
+
+for invariant in \
+  'nsenter_cmd=/usr/bin/nsenter' \
+  '--property=RootDirectory' \
+  '--property=Leader' \
+  '--mount --uts --ipc --net --pid --cgroup' \
+  '--root="$leader_root"' \
+  '--wd="$leader_root"' \
+  'arch_domain_leader_root_mismatch' \
+  'arch_domain_identity_changed'; do
+  require_fixed "$invariant" "$dispatch"
 done
 
 if grep -Eq '(^|[[:space:]/])pacman([[:space:]]|$)' "$test_script"; then
@@ -53,6 +68,10 @@ if grep -Eq '(^|[[:space:]/])pacman([[:space:]]|$)' "$test_script"; then
 fi
 if grep -Fq 'MO_ARCH_DISPATCH_ALLOW_TEST_MODE' "$test_script"; then
   echo 'arch-real-static: real integration test must not enable dispatcher test mode' >&2
+  exit 1
+fi
+if grep -Fq '"$machinectl_cmd" shell' "$dispatch"; then
+  echo 'arch-real-static: dispatcher must not depend on an Arch system bus or machinectl shell' >&2
   exit 1
 fi
 if grep -Eq 'machinectl[[:space:]]+shell.*(bash|sh)([[:space:]]|$)' "$test_script"; then
