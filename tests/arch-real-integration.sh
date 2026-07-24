@@ -36,7 +36,7 @@ done
 }
 
 for command_name in \
-  curl install machinectl nsenter python3 realpath sha256sum systemd-firstboot \
+  curl install machinectl nsenter python3 realpath sha256sum stat systemd-firstboot \
   systemd-nspawn tar timeout unzstd; do
   command -v "$command_name" >/dev/null 2>&1 || {
     echo "arch-real-integration: missing dependency: $command_name" >&2
@@ -59,10 +59,18 @@ cleanup() {
   if machinectl show "$machine_name" >/dev/null 2>&1; then
     timeout 20 machinectl terminate "$machine_name" >/dev/null 2>&1 || true
   fi
-  if [[ -n "$nspawn_pid" ]]; then
-    kill "$nspawn_pid" >/dev/null 2>&1 || true
+
+  if [[ -n "$nspawn_pid" ]] && kill -0 "$nspawn_pid" >/dev/null 2>&1; then
     timeout 20 tail --pid="$nspawn_pid" -f /dev/null >/dev/null 2>&1 || true
+  fi
+  if [[ -n "$nspawn_pid" ]] && kill -0 "$nspawn_pid" >/dev/null 2>&1; then
+    kill -TERM "$nspawn_pid" >/dev/null 2>&1 || true
+    timeout 10 tail --pid="$nspawn_pid" -f /dev/null >/dev/null 2>&1 || true
+  fi
+  if [[ -n "$nspawn_pid" ]] && kill -0 "$nspawn_pid" >/dev/null 2>&1; then
     kill -KILL "$nspawn_pid" >/dev/null 2>&1 || true
+  fi
+  if [[ -n "$nspawn_pid" ]]; then
     wait "$nspawn_pid" >/dev/null 2>&1 || true
   fi
 
