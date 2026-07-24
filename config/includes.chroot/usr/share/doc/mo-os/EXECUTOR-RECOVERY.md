@@ -66,6 +66,12 @@ Recovery verifies:
 
 The existing receipt is preserved byte-for-byte and the state is reconciled. A modified receipt or state blocks recovery.
 
+## Upgrade migration
+
+A pre-coordinator acceptance marker is migrated only when its existing terminal receipt is canonical, signed by the executor, and matches the request ID and SHA-256 marker. The durable state is written only after that verification succeeds.
+
+A legacy acceptance marker without a terminal receipt is not re-executed and does not receive fabricated metadata. Startup fails closed with `legacy_pending_request_requires_manual_recovery` so the incomplete evidence can be examined explicitly.
+
 ## Durability
 
 New states use exclusive creation with `O_CREAT | O_EXCL | O_NOFOLLOW`. Updates and receipts use temporary files or directories, atomic rename, file `fsync`, and parent-directory `fsync`. State directories and the lock are non-symlinked and private to root.
