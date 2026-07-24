@@ -1,6 +1,6 @@
 [Unit]
-Description=Morimil-controlled MO OS executor
-Documentation=file:/usr/share/doc/mo-os/MORIMIL-EXECUTOR.md
+Description=Morimil-controlled MO OS durable executor
+Documentation=file:/usr/share/doc/mo-os/MORIMIL-EXECUTOR.md file:/usr/share/doc/mo-os/EXECUTOR-RECOVERY.md
 After=local-fs.target
 ConditionPathExists=/var/lib/mo-bodyd/identity/executor-private.pem
 ConditionPathExists=/etc/mo/executor/pairing.json
@@ -8,9 +8,11 @@ ConditionPathExists=/etc/mo/executor/morimil-controller.pem
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/python3 /usr/local/sbin/mo-bodyd serve
+ExecStart=/usr/bin/python3 /usr/local/sbin/mo-executord serve
 Restart=on-failure
 RestartSec=2s
+KillMode=control-group
+TimeoutStopSec=30s
 UMask=0077
 NoNewPrivileges=yes
 PrivateTmp=yes
