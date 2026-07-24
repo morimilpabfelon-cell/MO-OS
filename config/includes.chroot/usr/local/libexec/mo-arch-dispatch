@@ -1,0 +1,219 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+export PATH=/usr/sbin:/usr/bin:/sbin:/bin
+
+readonly machine_name=mo-dev
+readonly worker_inside=/usr/local/libexec/mo-arch-worker
+readonly action=${1:-}
+
+machine_root=/var/lib/machines/mo-dev
+worker_host=/usr/local/libexec/mo-arch-worker
+machinectl_cmd=/usr/bin/machinectl
+nsenter_cmd=/usr/bin/nsenter
+timeout_cmd=/usr/bin/timeout
+sha256sum_cmd=/usr/bin/sha256sum
+realpath_cmd=/usr/bin/realpath
+stat_cmd=/usr/bin/stat
+proc_root=/proc
+readonly state_property=--property=State
+readonly root_property=--property=RootDirectory
+readonly leader_property=--property=Leader
+
+if [[ ${MO_ARCH_DISPATCH_ALLOW_TEST_MODE:-0} == 1 ]]; then
+  machine_root=${MO_ARCH_DISPATCH_MACHINE_ROOT:-$machine_root}
+  worker_host=${MO_ARCH_DISPATCH_WORKER_HOST:-$worker_host}
+  machinectl_cmd=${MO_ARCH_DISPATCH_MACHINECTL:-$machinectl_cmd}
+  nsenter_cmd=${MO_ARCH_DISPATCH_NSENTER:-$nsenter_cmd}
+  proc_root=${MO_ARCH_DISPATCH_PROC_ROOT:-$proc_root}
+  for test_path in "$machine_root" "$worker_host" "$machinectl_cmd" "$nsenter_cmd" "$proc_root"; do
+    case "$test_path" in
+      /tmp/*|/mnt/*) ;;
+      *) echo 'arch_test_path_invalid' >&2; exit 1 ;;
+    esac
+  done
+elif [[ ${EUID:-$(id -u)} -ne 0 ]]; then
+  echo 'arch_dispatch_requires_root' >&2
+  exit 1
+fi
+
+if [[ $# -ne 1 || "$action" != status ]]; then
+  echo 'arch_dispatch_operation_not_allowed' >&2
+  exit 2
+fi
+
+[[ -d "$machine_root" && ! -L "$machine_root" ]] || {
+  echo 'arch_domain_not_initialized' >&2
+  exit 1
+}
+[[ -f "$worker_host" && ! -L "$worker_host" && -x "$worker_host" ]] || {
+  echo 'arch_authoritative_worker_missing' >&2
+  exit 1
+}
+[[ -f "$machine_root$worker_inside" && ! -L "$machine_root$worker_inside" && -x "$machine_root$worker_inside" ]] || {
+  echo 'arch_worker_missing' >&2
+  exit 1
+}
+for required_command in "$machinectl_cmd" "$nsenter_cmd" "$timeout_cmd" "$sha256sum_cmd" "$realpath_cmd" "$stat_cmd"; do
+  [[ -x "$required_command" ]] || {
+    echo "arch_dispatch_dependency_missing:${required_command}" >&2
+    exit 1
+  }
+done
+
+resolved_machine_root="$($realpath_cmd -e -- "$machine_root")" || {
+  echo 'arch_machine_root_resolution_failed' >&2
+  exit 1
+}
+resolved_worker_host="$($realpath_cmd -e -- "$worker_host")" || {
+  echo 'arch_authoritative_worker_resolution_failed' >&2
+  exit 1
+}
+resolved_domain_worker="$($realpath_cmd -e -- "$machine_root$worker_inside")" || {
+  echo 'arch_worker_resolution_failed' >&2
+  exit 1
+}
+[[ "$resolved_machine_root" == "$machine_root" ]] || {
+  echo 'arch_machine_root_not_canonical' >&2
+  exit 1
+}
+[[ "$resolved_worker_host" == "$worker_host" ]] || {
+  echo 'arch_authoritative_worker_path_not_canonical' >&2
+  exit 1
+}
+[[ "$resolved_domain_worker" == "$machine_root$worker_inside" ]] || {
+  echo 'arch_worker_path_not_canonical' >&2
+  exit 1
+}
+
+read -r host_worker_sha _ < <("$sha256sum_cmd" "$resolved_worker_host")
+read -r domain_worker_sha _ < <("$sha256sum_cmd" "$resolved_domain_worker")
+[[ "$host_worker_sha" =~ ^[0-9a-f]{64}$ && "$domain_worker_sha" =~ ^[0-9a-f]{64}$ ]] || {
+  echo 'arch_worker_digest_invalid' >&2
+  exit 1
+}
+[[ "$host_worker_sha" == "$domain_worker_sha" ]] || {
+  echo 'arch_worker_integrity_mismatch' >&2
+  exit 1
+}
+
+machine_property() {
+  local property_option=$1
+  "$timeout_cmd" 5 "$machinectl_cmd" show "$machine_name" "$property_option" --value 2>/dev/null
+}
+
+machine_state="$(machine_property "$state_property")" || {
+  echo 'arch_domain_state_unavailable' >&2
+  exit 1
+}
+[[ "$machine_state" == running ]] || {
+  echo 'arch_domain_not_running' >&2
+  exit 1
+}
+
+registered_root="$(machine_property "$root_property")" || {
+  echo 'arch_domain_root_unavailable' >&2
+  exit 1
+}
+resolved_registered_root="$($realpath_cmd -e -- "$registered_root")" || {
+  echo 'arch_domain_root_resolution_failed' >&2
+  exit 1
+}
+[[ "$resolved_registered_root" == "$resolved_machine_root" ]] || {
+  echo 'arch_domain_root_mismatch' >&2
+  exit 1
+}
+
+leader_pid="$(machine_property "$leader_property")" || {
+  echo 'arch_domain_leader_unavailable' >&2
+  exit 1
+}
+[[ "$leader_pid" =~ ^[1-9][0-9]*$ ]] || {
+  echo 'arch_domain_leader_invalid' >&2
+  exit 1
+}
+leader_directory="$proc_root/$leader_pid"
+leader_root="$leader_directory/root"
+[[ -d "$leader_directory" && ! -L "$leader_directory" ]] || {
+  echo 'arch_domain_leader_missing' >&2
+  exit 1
+}
+
+machine_root_identity="$($stat_cmd -Lc '%d:%i' -- "$resolved_machine_root")" || {
+  echo 'arch_machine_root_identity_unavailable' >&2
+  exit 1
+}
+leader_root_identity="$($stat_cmd -Lc '%d:%i' -- "$leader_root")" || {
+  echo 'arch_domain_leader_root_unavailable' >&2
+  exit 1
+}
+[[ "$machine_root_identity" =~ ^[0-9]+:[0-9]+$ && "$leader_root_identity" == "$machine_root_identity" ]] || {
+  echo 'arch_domain_leader_root_mismatch' >&2
+  exit 1
+}
+
+verified_leader="$(machine_property "$leader_property")" || {
+  echo 'arch_domain_leader_unavailable' >&2
+  exit 1
+}
+[[ "$verified_leader" == "$leader_pid" ]] || {
+  echo 'arch_domain_identity_changed' >&2
+  exit 1
+}
+
+if ! raw_status="$(
+  "$timeout_cmd" 20 "$nsenter_cmd" \
+    --target "$leader_pid" \
+    --mount --uts --ipc --net --pid --cgroup \
+    --root="$leader_root" \
+    --wd="$leader_root" \
+    -- "$worker_inside" status
+)"; then
+  echo 'arch_worker_execution_failed' >&2
+  exit 1
+fi
+
+post_state="$(machine_property "$state_property")" || {
+  echo 'arch_domain_state_unavailable' >&2
+  exit 1
+}
+post_leader="$(machine_property "$leader_property")" || {
+  echo 'arch_domain_leader_unavailable' >&2
+  exit 1
+}
+[[ "$post_state" == running && "$post_leader" == "$leader_pid" ]] || {
+  echo 'arch_domain_identity_changed' >&2
+  exit 1
+}
+
+printf '%s\n' "$raw_status" | python3 -c '
+import json
+import re
+import sys
+
+raw = sys.stdin.read()
+try:
+    status = json.loads(raw)
+except json.JSONDecodeError as exc:
+    raise SystemExit("arch_worker_output_invalid") from exc
+
+expected = {"schema_version", "domain", "kernel_release", "machine", "os_release"}
+if not isinstance(status, dict) or set(status) != expected:
+    raise SystemExit("arch_worker_fields_invalid")
+if status["schema_version"] != "mo.arch.worker.status.v0.1":
+    raise SystemExit("arch_worker_schema_unsupported")
+if status["domain"] != "arch":
+    raise SystemExit("arch_worker_domain_invalid")
+if not isinstance(status["kernel_release"], str) or not re.fullmatch(r"[A-Za-z0-9._+:-]{1,128}", status["kernel_release"]):
+    raise SystemExit("arch_worker_kernel_invalid")
+if not isinstance(status["machine"], str) or not re.fullmatch(r"[A-Za-z0-9._-]{1,64}", status["machine"]):
+    raise SystemExit("arch_worker_machine_invalid")
+os_release = status["os_release"]
+if not isinstance(os_release, dict) or set(os_release) != {"ID", "NAME", "VERSION_ID"}:
+    raise SystemExit("arch_worker_os_release_invalid")
+if os_release["ID"] != "arch":
+    raise SystemExit("arch_worker_identity_mismatch")
+if not all(isinstance(value, str) and 0 < len(value) <= 128 for value in os_release.values()):
+    raise SystemExit("arch_worker_os_release_value_invalid")
+print(json.dumps(status, ensure_ascii=False, sort_keys=True, separators=(",", ":")))
+'

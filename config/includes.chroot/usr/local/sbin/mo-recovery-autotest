@@ -3,7 +3,7 @@ set -Eeuo pipefail
 
 readonly expected_token=MO-RECOVERY-VDA-01
 readonly key_file=/run/mo-ci-luks.key
-readonly ci_passphrase='mo-os-alpha-0.4-ci-only'
+readonly ci_passphrase='mo-os-0.6.0-alpha.1-ci-only'
 
 read_token() {
   local path value

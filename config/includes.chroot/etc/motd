@@ -1,6 +1,6 @@
 
-MO OS Alpha 0.1 — Terminal Foundation
+MO OS — Debian governs. Arch executes.
 
-This is an experimental live system. Disk installation is disabled.
+Experimental system. Encrypted installation is restricted to authorized
+QEMU/KVM UEFI disks. Physical hardware installation remains disabled.
 Run: mo help
-

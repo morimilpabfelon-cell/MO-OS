@@ -3,7 +3,26 @@ set -Eeuo pipefail
 
 readonly expected_token=MO-INSTALL-VDA-01
 readonly key_file=/run/mo-ci-luks.key
-readonly ci_passphrase='mo-os-alpha-0.4-ci-only'
+readonly release_file=/etc/mo-release
+
+read_release_version() {
+  local key value
+  [[ -r "$release_file" ]] || return 1
+  while IFS='=' read -r key value; do
+    [[ "$key" == VERSION ]] || continue
+    value=${value#\"}
+    value=${value%\"}
+    [[ "$value" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9._-]+)?$ ]] || return 1
+    printf '%s\n' "$value"
+    return 0
+  done < "$release_file"
+  return 1
+}
+
+mo_version="$(read_release_version)"
+readonly mo_version
+ci_passphrase="mo-os-${mo_version}-ci-only"
+readonly ci_passphrase
 
 read_token() {
   local path value
@@ -56,7 +75,7 @@ case "${1:-run}" in
     umask 077
     printf '%s' "$ci_passphrase" > "$key_file"
     chmod 0600 "$key_file"
-    emit 'MO_OS_INSTALL_AUTHORIZED disk=/dev/vda mode=encrypted-uefi'
+    emit "MO_OS_INSTALL_AUTHORIZED disk=/dev/vda mode=encrypted-uefi version=${mo_version}"
     /bin/bash /usr/local/sbin/mo-install \
       --virtual \
       --firmware uefi \

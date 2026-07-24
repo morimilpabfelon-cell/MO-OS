@@ -1,7 +1,14 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-iso_path="${1:-artifacts/mo-os-alpha-0.2-amd64.iso}"
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+mo_version="$(<"$repo_root/VERSION")"
+major_minor="$(printf '%s\n' "$mo_version" | awk -F. '{print $1 "." $2}')"
+[[ "$major_minor" =~ ^[0-9]+\.[0-9]+$ ]] || {
+  echo "Invalid MO OS VERSION: $mo_version" >&2
+  exit 1
+}
+iso_path="${1:-$repo_root/artifacts/mo-os-alpha-${major_minor}-amd64.iso}"
 timeout_seconds="${MO_BOOT_TIMEOUT:-300}"
 marker='MO_OS_BOOT_READY'
 

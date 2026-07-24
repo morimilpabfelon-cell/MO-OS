@@ -1,4 +1,4 @@
-name: MO OS Secure Boot Candidate
+name: MO OS Morimil Executor Candidate
 
 on:
   push:
@@ -14,20 +14,23 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build-boot-secure-install-recover-update:
+  build-boot-secure-install-recover-update-executor:
     runs-on: ubuntu-latest
-    timeout-minutes: 175
+    timeout-minutes: 180
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
 
       - name: Install host validation and virtualization tools
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            btrfs-progs dosfstools expect mtools openssl ovmf \
+            btrfs-progs curl dosfstools expect mtools openssl ovmf \
             python3-virt-firmware qemu-system-x86 sbsigntool shellcheck \
-            systemd-boot-efi systemd-ukify util-linux uuid-runtime xorriso make
+            systemd-boot-efi systemd-container systemd-ukify util-linux \
+            uuid-runtime xorriso zstd make
 
       - name: Validate source tree
         shell: bash
@@ -38,6 +41,24 @@ jobs:
           status=${PIPESTATUS[0]}
           set -e
           exit "$status"
+
+      - name: Validate real Debian-to-Arch systemd-nspawn path
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          sudo make arch-real-integration-test 2>&1 | tee diagnostics/real-arch-integration.log
+
+      - name: Verify Morimil executor authority boundary
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          make executor-test 2>&1 | tee diagnostics/executor-signature-test.log
+
+      - name: Verify Debian-governed Arch execution boundary
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          make arch-dispatch-test 2>&1 | tee diagnostics/debian-arch-dispatch-test.log
 
       - name: Verify signed update trust chain
         shell: bash
@@ -107,24 +128,24 @@ jobs:
         run: |
           set -Eeuo pipefail
           ls -lh artifacts | tee diagnostics/artifact-info.txt
-          sha256sum artifacts/mo-os-alpha-0.5-amd64.iso | tee -a diagnostics/artifact-info.txt
+          sha256sum artifacts/mo-os-alpha-0.6-amd64.iso | tee -a diagnostics/artifact-info.txt
 
       - name: Publish system candidate
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: mo-os-alpha-0.5-amd64
+          name: mo-os-alpha-0.6-amd64
           path: |
-            artifacts/mo-os-alpha-0.5-amd64.iso
-            artifacts/mo-os-alpha-0.5-amd64.iso.sha256
+            artifacts/mo-os-alpha-0.6-amd64.iso
+            artifacts/mo-os-alpha-0.6-amd64.iso.sha256
           if-no-files-found: error
           retention-days: 7
           compression-level: 0
 
       - name: Publish diagnostics
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: mo-os-alpha-0.5-secure-boot-diagnostics
+          name: mo-os-alpha-0.6-morimil-executor-diagnostics
           path: diagnostics/
           if-no-files-found: warn
           retention-days: 7

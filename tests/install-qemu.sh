@@ -1,13 +1,22 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-iso_path="${1:-artifacts/mo-os-alpha-0.4-amd64.iso}"
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+mo_version="$(<"$repo_root/VERSION")"
+version_core=${mo_version%%-*}
+IFS=. read -r version_major version_minor version_patch version_extra <<< "$version_core"
+[[ "$version_major" =~ ^[0-9]+$ && "$version_minor" =~ ^[0-9]+$ && "$version_patch" =~ ^[0-9]+$ && -z "$version_extra" ]] || {
+  echo "Invalid MO OS VERSION: $mo_version" >&2
+  exit 1
+}
+major_minor="${version_major}.${version_minor}"
+iso_path="${1:-$repo_root/artifacts/mo-os-alpha-${major_minor}-amd64.iso}"
 authorization_timeout="${MO_INSTALL_AUTH_TIMEOUT:-180}"
 install_timeout="${MO_INSTALL_TIMEOUT:-1800}"
 boot_timeout="${MO_INSTALLED_BOOT_TIMEOUT:-420}"
 recovery_timeout="${MO_RECOVERY_TIMEOUT:-900}"
 diagnostics_dir="${MO_INSTALL_DIAGNOSTICS_DIR:-}"
-ci_passphrase='mo-os-alpha-0.4-ci-only'
+ci_passphrase="mo-os-${mo_version}-ci-only"
 authorization_marker='MO_OS_INSTALL_AUTHORIZED'
 install_marker='MO_OS_INSTALL_COMPLETE'
 mutation_marker='MO_OS_MUTATION_READY'

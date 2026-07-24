@@ -3,6 +3,8 @@ set -Eeuo pipefail
 
 readonly machine_name=mo-dev
 readonly target=/var/lib/machines/mo-dev
+readonly worker_source=/usr/local/libexec/mo-arch-worker
+readonly worker_target=/usr/local/libexec/mo-arch-worker
 readonly release=2026.07.01
 readonly archive="archlinux-bootstrap-${release}-x86_64.tar.zst"
 readonly archive_url="https://geo.mirror.pkgbuild.com/iso/${release}/${archive}"
@@ -17,8 +19,12 @@ fi
   echo "$target already exists; refusing to overwrite it." >&2
   exit 1
 }
+[[ -f "$worker_source" && ! -L "$worker_source" && -x "$worker_source" ]] || {
+  echo "Missing governed Arch worker: $worker_source" >&2
+  exit 1
+}
 
-for command_name in curl sha256sum tar systemd-nspawn systemd-firstboot; do
+for command_name in curl install sha256sum tar systemd-nspawn systemd-firstboot; do
   command -v "$command_name" >/dev/null 2>&1 || {
     echo "Missing requirement: $command_name" >&2
     exit 1
@@ -43,6 +49,13 @@ source_root="$workdir/extract/root.x86_64"
 }
 
 cp -a "$source_root"/. "$target"/
+install -Dm0755 "$worker_source" "$target$worker_target"
+host_worker_sha="$(sha256sum "$worker_source" | awk '{print $1}')"
+domain_worker_sha="$(sha256sum "$target$worker_target" | awk '{print $1}')"
+[[ "$host_worker_sha" == "$domain_worker_sha" ]] || {
+  echo 'Installed Arch worker failed integrity verification.' >&2
+  exit 1
+}
 cp --dereference /etc/resolv.conf "$target/etc/resolv.conf"
 systemd-firstboot --root="$target" --hostname="$machine_name" --locale=C.UTF-8 --timezone=UTC
 
@@ -50,9 +63,11 @@ systemd-nspawn -D "$target" /usr/bin/pacman-key --init
 systemd-nspawn -D "$target" /usr/bin/pacman-key --populate archlinux
 systemd-nspawn -D "$target" /usr/bin/pacman -Syu --noconfirm --needed \
   base base-devel git rust python nodejs npm
+systemd-nspawn -D "$target" "$worker_target" status >/dev/null
 
 mkdir -p /srv/mo-projects
 systemctl enable "systemd-nspawn@${machine_name}.service"
 
-echo 'Arch development domain created.'
-echo 'Enter with: mo dev'
+echo 'Arch development domain created with the governed MO worker.'
+echo 'Debian governs. Arch executes.'
+echo 'Enter interactively with: mo dev'

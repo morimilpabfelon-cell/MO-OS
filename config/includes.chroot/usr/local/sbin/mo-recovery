@@ -6,6 +6,24 @@ readonly boot_mount=/mnt/mo-recovery-boot
 readonly mapper_name=mo_recovery
 readonly mapper=/dev/mapper/$mapper_name
 readonly ci_key_path=/run/mo-ci-luks.key
+readonly release_file=/etc/mo-release
+
+read_release_version() {
+  local key value
+  [[ -r "$release_file" ]] || return 1
+  while IFS='=' read -r key value; do
+    [[ "$key" == VERSION ]] || continue
+    value=${value#\"}
+    value=${value%\"}
+    [[ "$value" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9._-]+)?$ ]] || return 1
+    printf '%s\n' "$value"
+    return 0
+  done < "$release_file"
+  return 1
+}
+
+mo_version="$(read_release_version)"
+readonly mo_version
 
 command_name=''
 disk=''
@@ -18,14 +36,14 @@ mounted=0
 crypt_opened=0
 
 usage() {
-  cat <<'USAGE'
-MO OS encrypted recovery tool
+  cat <<USAGE
+MO OS ${mo_version} encrypted recovery tool
 
 Usage from the MO OS live environment:
   mo recovery rollback --virtual --firmware uefi --disk /dev/vda --snapshot NAME
 
-Alpha 0.4 recovery accepts only /dev/vda inside QEMU/KVM. It restores only the
-root subvolume. The separate @home subvolume is preserved.
+The current recovery tool accepts only /dev/vda inside QEMU/KVM. It restores
+only the root subvolume. The separate @home subvolume is preserved.
 USAGE
 }
 
@@ -96,11 +114,11 @@ while (($# > 0)); do
   shift
 done
 
-[[ "$command_name" == rollback ]] || fail 'only rollback is implemented in Alpha 0.4'
+[[ "$command_name" == rollback ]] || fail 'only rollback is implemented in the current MO OS recovery tool'
 [[ ${EUID:-$(id -u)} -eq 0 ]] || fail 'root privileges are required'
-[[ "$virtual_mode" -eq 1 ]] || fail 'Alpha 0.4 recovery requires --virtual'
-[[ "$firmware" == uefi ]] || fail 'Alpha 0.4 recovery requires --firmware uefi'
-[[ "$disk" == /dev/vda ]] || fail 'Alpha 0.4 recovery permits only /dev/vda'
+[[ "$virtual_mode" -eq 1 ]] || fail 'the current MO OS recovery tool requires --virtual'
+[[ "$firmware" == uefi ]] || fail 'the current MO OS recovery tool requires --firmware uefi'
+[[ "$disk" == /dev/vda ]] || fail 'the current MO OS recovery tool permits only /dev/vda'
 [[ -b "$disk" ]] || fail "$disk is not a block device"
 [[ "$snapshot" =~ ^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$ ]] || fail 'snapshot name is invalid'
 
@@ -163,6 +181,6 @@ if [[ "$non_interactive" -eq 1 ]]; then
 fi
 sync
 
-message="MO_OS_ROLLBACK_COMPLETE disk=${disk} snapshot=${snapshot} backup=${backup} home=preserved"
+message="MO_OS_ROLLBACK_COMPLETE disk=${disk} snapshot=${snapshot} backup=${backup} home=preserved version=${mo_version}"
 emit "$message"
 logger -t mo-recovery "$message" || true

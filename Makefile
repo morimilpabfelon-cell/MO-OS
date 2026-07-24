@@ -1,24 +1,51 @@
-.PHONY: help check configure iso verify boot-test secure-boot-test install-test update-test run clean
+.PHONY: help check documentation-check version-check iso-verifier-test executor-recovery-test arch-real-integration-test configure iso verify boot-test secure-boot-test install-test update-test executor-test arch-dispatch-test run clean
 
 SHELL := /bin/bash
-ISO := artifacts/mo-os-alpha-0.5-amd64.iso
+ISO := artifacts/mo-os-alpha-0.6-amd64.iso
 
 help:
 	@printf '%s\n' \
 	  'MO OS build commands' \
-	  '  make check             Static validation' \
-	  '  make configure         Generate live-build state' \
-	  '  sudo make iso          Build the bootable ISO' \
-	  '  make verify            Inspect and hash the ISO' \
-	  '  make boot-test         Verify terminal boot in QEMU' \
-	  '  make secure-boot-test  Boot a signed UKI and reject unsigned or modified UKIs' \
-	  '  make install-test      Install, unlock, mutate, roll back and reboot a disposable QEMU disk' \
-	  '  sudo make update-test  Verify signatures, snapshots, tamper rejection and anti-replay' \
-	  '  make run               Boot the ISO interactively' \
-	  '  sudo make clean        Remove live-build output'
+	  '  make check                       Static, documentation, version, ISO, recovery and real-Arch invariants' \
+	  '  make documentation-check         Verify executor and real-Arch documentation agreement' \
+	  '  make version-check               Verify release, ISO and CI version agreement' \
+	  '  make iso-verifier-test           Test ISO digest, path and metadata rejection' \
+	  '  make executor-recovery-test      Test durable executor interruption recovery' \
+	  '  sudo make arch-real-integration-test  Test Debian-to-real-Arch systemd-nspawn execution' \
+	  '  make configure                   Generate live-build state' \
+	  '  sudo make iso                    Build the bootable ISO' \
+	  '  make verify                      Verify stored checksum and ISO metadata' \
+	  '  make boot-test                   Verify terminal boot in QEMU' \
+	  '  make secure-boot-test            Boot a signed UKI and reject unsigned or modified UKIs' \
+	  '  make install-test                Install, unlock, mutate, roll back and reboot a disposable QEMU disk' \
+	  '  sudo make update-test            Verify signatures, snapshots, tamper rejection and anti-replay' \
+	  '  make executor-test               Verify signed execution, recovery and Debian-to-Arch status' \
+	  '  make arch-dispatch-test          Verify Debian governance over the fixed Arch worker' \
+	  '  make run                         Boot the ISO interactively' \
+	  '  sudo make clean                  Remove live-build output'
 
 check:
 	@bash tests/static-checks.sh
+	@bash tests/recovery-static-checks.sh
+	@bash tests/arch-real-static-checks.sh
+	@bash tests/documentation-consistency.sh
+	@bash tests/version-consistency.sh
+	@bash tests/iso-verifier.sh
+
+documentation-check:
+	@bash tests/documentation-consistency.sh
+
+version-check:
+	@bash tests/version-consistency.sh
+
+iso-verifier-test:
+	@bash tests/iso-verifier.sh
+
+executor-recovery-test:
+	@bash tests/executor-recovery.sh
+
+arch-real-integration-test:
+	@bash tests/arch-real-integration.sh
 
 configure:
 	@bash build/configure.sh
@@ -41,8 +68,16 @@ install-test:
 update-test:
 	@bash tests/update-signature.sh
 
+executor-test:
+	@bash tests/executor-signature.sh
+	@bash tests/executor-arch-status.sh
+	@bash tests/executor-recovery.sh
+
+arch-dispatch-test:
+	@bash tests/arch-dispatch.sh
+
 run:
-	@test -f "$(ISO)" || { echo "Missing $(ISO). Build it first." >&2; exit 1; }
+	@test -f "$(ISO)" || { echo 'Missing $(ISO). Build it first.' >&2; exit 1; }
 	@command -v qemu-system-x86_64 >/dev/null || { echo 'qemu-system-x86_64 is required.' >&2; exit 1; }
 	@qemu-system-x86_64 -enable-kvm -m 4096 -smp 4 -cdrom "$(ISO)" -boot d
 
