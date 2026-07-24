@@ -36,13 +36,23 @@ done
 }
 
 for command_name in \
-  curl install machinectl nsenter python3 realpath sha256sum stat systemd-firstboot \
+  curl grep install machinectl nsenter python3 realpath sha256sum stat systemd-firstboot \
   systemd-nspawn tar timeout unzstd; do
   command -v "$command_name" >/dev/null 2>&1 || {
     echo "arch-real-integration: missing dependency: $command_name" >&2
     exit 1
   }
 done
+
+machine_is_registered() {
+  machinectl list --no-legend --no-pager 2>/dev/null | \
+    grep -Eq "^[[:space:]]*${machine_name}[[:space:]]"
+}
+
+if machine_is_registered; then
+  echo "arch-real-integration: refusing existing registered machine: $machine_name" >&2
+  exit 1
+fi
 
 workdir="$(mktemp -d)"
 nspawn_pid=''
@@ -56,7 +66,7 @@ cleanup() {
   local cleanup_attempt
   set +e
 
-  if machinectl show "$machine_name" >/dev/null 2>&1; then
+  if machine_is_registered; then
     timeout 20 machinectl terminate "$machine_name" >/dev/null 2>&1 || true
   fi
 
@@ -75,7 +85,7 @@ cleanup() {
   fi
 
   for ((cleanup_attempt = 0; cleanup_attempt < 20; cleanup_attempt++)); do
-    if ! machinectl show "$machine_name" >/dev/null 2>&1; then
+    if ! machine_is_registered; then
       break
     fi
     sleep 1
@@ -93,7 +103,7 @@ cleanup() {
   rmdir /usr/local/libexec >/dev/null 2>&1 || true
   rm -rf "$workdir"
 
-  if machinectl show "$machine_name" >/dev/null 2>&1; then
+  if machine_is_registered; then
     echo 'arch-real-integration: cleanup left mo-dev registered' >&2
     cleanup_failed=1
   fi
